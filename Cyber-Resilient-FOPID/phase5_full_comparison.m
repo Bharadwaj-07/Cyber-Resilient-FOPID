@@ -158,13 +158,13 @@ end
 
 % Write CSV
 csvpath = fullfile(outdir, 'phase5_comparison.csv');
-fid = fopen(csvpath,'w');
-fprintf(fid, 'scenario,attack_type,mag,slope,detected,det_time,det_delay,conf,ITAE_2DoF,ITAE_PID,ITAE_Res,mode_transitions,final_mode\n');
+csvfid = fopen(csvpath,'w');
+fprintf(csvfid, 'scenario,attack_type,mag,slope,detected,det_time,det_delay,conf,ITAE_2DoF,ITAE_PID,ITAE_Res,mode_transitions,final_mode\n');
 for k = 1:length(rows)
     r = rows{k};
-    fprintf(fid, '%s,%s,%.4f,%.4f,%d,%.4f,%.4f,%.6g,%.6f,%.6f,%.6f,%d,%d\n', r.scenario, r.attack_type, r.attack_mag, r.attack_slope, r.detected, NaN2num(r.detection_time), NaN2num(r.detection_delay), r.confidence, r.ITAE_2dof, r.ITAE_pid, r.ITAE_res, r.mode_transitions, r.final_mode);
+    fprintf(csvfid, '%s,%s,%.4f,%.4f,%d,%.4f,%.4f,%.6g,%.6f,%.6f,%.6f,%d,%d\n', r.scenario, r.attack_type, r.attack_mag, r.attack_slope, r.detected, NaN2num(r.detection_time), NaN2num(r.detection_delay), r.confidence, r.ITAE_2dof, r.ITAE_pid, r.ITAE_res, r.mode_transitions, r.final_mode);
 end
-fclose(fid);
+fclose(csvfid);
 
 % Save summary MAT
 save(fullfile(outdir,'phase5_summary.mat'), 'rows');
@@ -267,6 +267,19 @@ function ss_sys = safe_controller_ss(C, plant_ss)
     % Try to convert controller C to state-space. If it fails (improper TF,
     % symbolic object), fall back to a PID tuned on the plant using pidtune.
     try
+        if isa(C,'tf')
+            try
+                [num, den] = tfdata(C, 'v');
+                if ~isempty(num) && ~isempty(den) && numel(num) >= numel(den)
+                    k = real(evalfr(C, 0));
+                    if ~isfinite(k), k = 1; end
+                    ss_sys = ss(k);
+                    return;
+                end
+            catch
+                % Fall through to the general conversion path.
+            end
+        end
         ss_sys = ss(C);
         return;
     catch
