@@ -34,6 +34,19 @@ if length(y_meas) ~= N || length(r_ref) ~= N
     error('t, y_meas, and r_ref must have same length');
 end
 
+% Prepare Phase 4 log for this switcher invocation
+outdir4 = fullfile('results','phase4'); if ~exist(outdir4,'dir'), mkdir(outdir4); end
+run_ts = datestr(now,'yyyymmdd_HHMMSS');
+logpath4 = fullfile(outdir4, sprintf('phase4_switcher_%s.log', run_ts));
+lf = fopen(logpath4,'w');
+if lf > 0
+    fprintf(lf, 'AVR_SWITCHER log - %s\n', datestr(now));
+    fprintf(lf, 'hysteresis_time=%.3f, recovery_time=%.3f, initial_mode=%d\n', switcher_config.hysteresis_time, switcher_config.recovery_time, switcher_config.initial_mode);
+    if isfield(switcher_config,'detector_attack_flag'), fprintf(lf, 'detector_attack_flag=%d\n', double(switcher_config.detector_attack_flag)); end
+    if isfield(switcher_config,'detector_attack_time'), fprintf(lf, 'detector_attack_time=%s\n', num2str(switcher_config.detector_attack_time)); end
+    fprintf('Phase4 switcher log: %s\n', logpath4);
+end
+
 % Compute error signal
 e = r_ref - y_meas; % error used by controllers
 
@@ -173,8 +186,9 @@ for k = 1:N
                 if ~isempty(Cp) && any(Cp(:))
                     try
                         xp = pinv(Cp) * (u_prev - Dp * ek);
-                    catch
-                        % ignore adjustment if fails
+                        if exist('lf','var') && lf>0, fprintf(lf,'Performed bumpless adjust on PID at t=%.4f (detector switch)\n', t(k)); end
+                    catch ME
+                        if exist('lf','var') && lf>0, fprintf(lf,'Bumpless adjust (PID) failed at t=%.4f: %s\n', t(k), ME.message); end
                     end
                 end
             end
@@ -186,10 +200,12 @@ for k = 1:N
             from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
             % adjust PID state to avoid jump
             if ~isempty(Cp) && any(Cp(:))
-                try
-                    xp = pinv(Cp) * (y2 - Dp * ek);
-                catch
-                end
+                    try
+                        xp = pinv(Cp) * (y2 - Dp * ek);
+                        if exist('lf','var') && lf>0, fprintf(lf,'Performed bumpless adjust on PID at t=%.4f (metric switch)\n', t(k)); end
+                    catch ME
+                        if exist('lf','var') && lf>0, fprintf(lf,'Bumpless adjust (PID) failed at t=%.4f: %s\n', t(k), ME.message); end
+                    end
             end
         elseif mode == 2
             if t(k) - last_switch_time >= switcher_config.recovery_time
@@ -207,7 +223,9 @@ for k = 1:N
                     if ~isempty(C2) && any(C2(:))
                         try
                             x2 = pinv(C2) * (yp - D2 * ek);
-                        catch
+                            if exist('lf','var') && lf>0, fprintf(lf,'Performed bumpless adjust on 2DoF at t=%.4f (recovery->normal)\n', t(k)); end
+                        catch ME
+                            if exist('lf','var') && lf>0, fprintf(lf,'Bumpless adjust (2DoF) failed at t=%.4f: %s\n', t(k), ME.message); end
                         end
                     end
                 elseif recent_metric > metric_thresh
@@ -235,6 +253,16 @@ for k = 1:N
     if ~isempty(Ap)
         xp = xp + xp_dot * dt;
     end
+end
+
+% After simulation, log switch times if logfile open
+if exist('lf','var') && lf>0
+    fprintf(lf,'\nSwitch events: %d\n', size(switch_times,1));
+    for s=1:size(switch_times,1)
+        fprintf(lf,'t=%.4f: %d -> %d\n', switch_times(s,1), switch_times(s,2), switch_times(s,3));
+    end
+    fprintf(lf,'Final mode: %d\n', mode);
+    fclose(lf);
 end
 
 end

@@ -5,6 +5,13 @@ try
     % Ensure workspace functions are visible
     addpath(pwd);
 
+    % Prepare results folder and log
+    outdir = fullfile('results','phase3'); if ~exist(outdir,'dir'), mkdir(outdir); end
+    run_ts = datestr(now,'yyyymmdd_HHMMSS');
+    logpath = fullfile(outdir, ['phase3_quick_run_' run_ts '.log']);
+    lf = fopen(logpath,'w'); fprintf(lf,'Phase3 quick run log - %s\n', datestr(now));
+    fprintf('Phase3 quick log: %s\n', logpath);
+
     % Load parameters and build plant
     avr_parameters;
     G_amp = tf(Ka, [Ta 1]);
@@ -49,7 +56,13 @@ try
     detector_config.threshold_factor = 3;  % more conservative
 
     % Run detector
-    [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_fwd, r_ref, detector_config);
+    try
+        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_fwd, r_ref, detector_config);
+    catch ME
+        fprintf(lf, 'Detector ERROR: %s\n', ME.message);
+        rethrow(ME);
+    end
+    fprintf(lf, 'Detector: flag=%d, confidence=%g, detection_time=%s\n', double(attack_flag), confidence, num2str(detection_time));
 
     % Save results
     results.attack_flag = attack_flag;
@@ -62,6 +75,8 @@ try
     results.attack_config = attack_config;
     results.detector_config = detector_config;
     save('results_phase3_quick.mat', 'results');
+    copyfile('results_phase3_quick.mat', fullfile(outdir, ['results_phase3_quick_' run_ts '.mat']));
+    fprintf(lf, 'Saved results MAT to %s\n', fullfile(outdir, ['results_phase3_quick_' run_ts '.mat']));
 
     % Plots
     figure('Name','Phase3 Quick Test');
@@ -103,3 +118,4 @@ catch ME
     fprintf('Error during quick test: %s\n', ME.message);
     rethrow(ME);
 end
+if exist('lf','var'), fprintf(lf,'Run complete\n'); fclose(lf); end

@@ -6,6 +6,12 @@
 addpath(pwd);
 if ~exist('results','dir'), mkdir('results'); end
 outdir = fullfile('results','phase5'); if ~exist(outdir,'dir'), mkdir(outdir); end
+% Create a run-specific log for Phase 5
+run_ts = datestr(now,'yyyymmdd_HHMMSS');
+logpath = fullfile(outdir, ['phase5_run_' run_ts '.log']);
+lf = fopen(logpath,'w');
+fprintf(lf, 'Phase5 run log - %s\n', datestr(now));
+fprintf('Phase5 log: %s\n', logpath);
 
 % Load parameters and Phase 2 controllers
 avr_parameters;
@@ -90,17 +96,30 @@ for i = 1:length(scenarios)
     y_meas = avr_attack_injector(y_true, t, attack_cfg);
 
     % Run detector
-    [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_fwd, r, detector_cfg);
+    try
+        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_fwd, r, detector_cfg);
+    catch ME
+        fprintf(lf, 'Detector ERROR: %s\n', ME.message);
+        attack_flag = false; confidence = NaN; detection_time = NaN; residuals = zeros(size(t));
+    end
     detection_delay = NaN; if ~isnan(detection_time), detection_delay = detection_time - attack_cfg.start_time; end
+    fprintf(lf, 'Detector: flag=%d, confidence=%g, detection_time=%s, delay=%s\n', double(attack_flag), confidence, num2str(detection_time), num2str(detection_delay));
 
     % Resilient run: switcher uses detector hint
     switcher_cfg.detector_attack_flag = attack_flag;
     switcher_cfg.detector_attack_time = detection_time;
-    [u_res, mode_hist, switch_times] = avr_switcher(y_meas, t, r, C_2dof_y, C_pid, switcher_cfg);
+    try
+        [u_res, mode_hist, switch_times] = avr_switcher(y_meas, t, r, C_2dof_y, C_pid, switcher_cfg);
+        fprintf(lf, 'Switcher: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
+    catch ME
+        fprintf(lf, 'Switcher ERROR: %s\n', ME.message);
+        u_res = zeros(size(t)); mode_hist = zeros(size(t)); switch_times = [];
+    end
     % Simulate the plant per-step using Euler integration for higher fidelity
     try
         y_res = simulate_plant_euler(ss(G_fwd), u_res, t);
-    catch
+    catch ME
+        fprintf(lf, 'Plant sim ERROR: %s\n', ME.message);
         y_res = y_2dof;
     end
 
@@ -117,6 +136,7 @@ for i = 1:length(scenarios)
     % Save per-scenario MAT and plot
     fname = fullfile(outdir, [sc.name '.mat']);
     save(fname, 'sc', 'y_true', 'y_meas', 'residuals', 'attack_flag', 'detection_time', 'detection_delay', 'u_res', 'mode_hist', 'switch_times', 'y_res', 'metrics');
+    fprintf(lf, 'Saved results: %s\n', fname);
 
     % plot
     hf = figure('Visible','off');
@@ -146,8 +166,9 @@ fclose(fid);
 
 % Save summary MAT
 save(fullfile(outdir,'phase5_summary.mat'), 'rows');
-
 fprintf('Phase 5 full comparison complete. Results in %s\n', outdir);
+fprintf(lf, '\nPhase5 summary saved.\n');
+fclose(lf);
 
 function v = NaN2num(x)
     if isempty(x) || isnan(x), v = NaN; else v = x; end
