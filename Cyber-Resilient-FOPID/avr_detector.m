@@ -87,7 +87,11 @@ end
 
 % Simulate observer with simple Euler integration
 for k = 1:N
-    dt = (k==1) * (t(1)) + (k>1) * (t(k)-t(k-1));
+    if k == 1
+        dt = t(1);
+    else
+        dt = t(k) - t(k-1);
+    end
 
     % predictor
     y_hat = C * xhat + D * r_ref(max(1,k));
