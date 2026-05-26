@@ -47,19 +47,19 @@ end
 % Time base and reference
 Tfinal = 25; dt = 0.01; t = (0:dt:Tfinal)'; r = ones(size(t));
 
-% Baseline 2DoF closed-loop response (simulate closed-loop state-space via Euler)
+% Baseline 2DoF closed-loop response (simulate closed-loop by connecting plant and controllers per-step)
 try
-    G_cl_2dof = minreal((G_fwd * C_2dof_r) / (1 + G_fwd * C_2dof_y * G_sen), 1e-6);
-    y_2dof = simulate_ss_euler(ss(G_cl_2dof), r, t);
-catch
+    y_2dof = simulate_closedloop_2dof_euler(ss(G_fwd), C_2dof_r, C_2dof_y, t, r);
+catch ME
+    warning('Failed simulating 2DoF closed-loop; returning zeros: %s', ME.message);
     y_2dof = zeros(size(t));
 end
 
-% PID closed-loop (simulate via Euler on closed-loop ss)
+% PID closed-loop (simulate classical feedback controller per-step)
 try
-    G_cl_pid = minreal((G_fwd * C_pid) / (1 + G_fwd * C_pid * G_sen), 1e-6);
-    y_pid = simulate_ss_euler(ss(G_cl_pid), r, t);
-catch
+    y_pid = simulate_closedloop_pid_euler(ss(G_fwd), C_pid, t, r);
+catch ME
+    warning('Failed simulating PID closed-loop; returning zeros: %s', ME.message);
     y_pid = zeros(size(t));
 end
 
@@ -182,5 +182,80 @@ function y = simulate_plant_euler(plant_ss, u_seq, t)
         u = u_seq(min(k,end));
         x = x + (A * x + B * u) * dt;
         y(k) = C * x + D * u;
+    end
+end
+
+function y = simulate_closedloop_2dof_euler(plant_ss, C_r, C_y, t, r)
+    % Simulate plant + 2DoF controllers in closed-loop using Euler integration
+    plant_ss = ss(plant_ss);
+    A = plant_ss.A; B = plant_ss.B; C = plant_ss.C; D = plant_ss.D;
+
+    % Convert controllers to state-space (use safe fallback if conversion fails)
+    Cr_ss = safe_controller_ss(C_r, plant_ss);
+    Cy_ss = safe_controller_ss(C_y, plant_ss);
+    Ar = Cr_ss.A; Br = Cr_ss.B; Cr = Cr_ss.C; Dr = Cr_ss.D;
+    Ay = Cy_ss.A; By = Cy_ss.B; Cy = Cy_ss.C; Dy = Cy_ss.D;
+
+    nx_p = size(A,1); nx_r = size(Ar,1); nx_y = size(Ay,1);
+    xp = zeros(nx_p,1); xr = zeros(nx_r,1); xy = zeros(nx_y,1);
+    N = length(t); y = zeros(N,1); u_prev = 0;
+    for k = 1:N
+        if k==1, dt = t(1); else dt = t(k)-t(k-1); end
+        % measurement
+        ym = C * xp + D * u_prev;
+        % controller outputs
+        ur = Cr * xr + Dr * r(k);
+        uy = Cy * xy + Dy * ym;
+        u = ur + uy;
+        % update controller states
+        xr = xr + (Ar * xr + Br * r(k)) * dt;
+        xy = xy + (Ay * xy + By * ym) * dt;
+        % update plant
+        xp = xp + (A * xp + B * u) * dt;
+        y(k) = C * xp + D * u;
+        u_prev = u;
+    end
+end
+
+function y = simulate_closedloop_pid_euler(plant_ss, C_pid, t, r)
+    % Simulate plant + PID controller in classic feedback using Euler integration
+    plant_ss = ss(plant_ss);
+    A = plant_ss.A; B = plant_ss.B; C = plant_ss.C; D = plant_ss.D;
+
+    Cc_ss = safe_controller_ss(C_pid, plant_ss);
+    Ac = Cc_ss.A; Bc = Cc_ss.B; Cc = Cc_ss.C; Dc = Cc_ss.D;
+
+    nx_p = size(A,1); nx_c = size(Ac,1);
+    xp = zeros(nx_p,1); xc = zeros(nx_c,1);
+    N = length(t); y = zeros(N,1); u_prev = 0;
+    for k = 1:N
+        if k==1, dt = t(1); else dt = t(k)-t(k-1); end
+        ym = C * xp + D * u_prev;
+        e = r(k) - ym;
+        u = Cc * xc + Dc * e;
+        xc = xc + (Ac * xc + Bc * e) * dt;
+        xp = xp + (A * xp + B * u) * dt;
+        y(k) = C * xp + D * u;
+        u_prev = u;
+    end
+end
+
+function ss_sys = safe_controller_ss(C, plant_ss)
+    % Try to convert controller C to state-space. If it fails (improper TF,
+    % symbolic object), fall back to a PID tuned on the plant using pidtune.
+    try
+        ss_sys = ss(C);
+        return;
+    catch
+        warning('Controller->ss conversion failed; using PID fallback via pidtune');
+        try
+            pid_fb = pidtune(plant_ss, 'PID');
+            ss_sys = ss(pid_fb);
+            return;
+        catch
+            % Last-resort: create a simple P controller with unit gain
+            ss_sys = ss(pid(1,0,0));
+            return;
+        end
     end
 end
