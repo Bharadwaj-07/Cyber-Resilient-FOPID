@@ -7,14 +7,21 @@ addpath(pwd);
 if ~exist('results','dir'), mkdir('results'); end
 outdir = fullfile('results','phase5'); if ~exist(outdir,'dir'), mkdir(outdir); end
 % Create a run-specific log for Phase 5
+global AVR_SHARED_LOG_FID AVR_SHARED_LOG_PATH
 run_ts = datestr(now,'yyyymmdd_HHMMSS');
-logpath = fullfile(outdir, ['phase5_run_' run_ts '.log']);
-lf = fopen(logpath,'w');
-closeLog = lf > 2;
-if lf < 0
-    warning('Could not open %s for writing; logging to console only.', logpath);
-    lf = 1;
+if exist('AVR_SHARED_LOG_FID','var') && ~isempty(AVR_SHARED_LOG_FID) && AVR_SHARED_LOG_FID > 0
+    lf = AVR_SHARED_LOG_FID;
     closeLog = false;
+    logpath = AVR_SHARED_LOG_PATH;
+else
+    logpath = fullfile(outdir, ['phase5_run_' run_ts '.log']);
+    lf = fopen(logpath,'w');
+    closeLog = lf > 2;
+    if lf < 0
+        warning('Could not open %s for writing; logging to console only.', logpath);
+        lf = 1;
+        closeLog = false;
+    end
 end
 fprintf(lf, 'Phase5 run log - %s\n', datestr(now));
 fprintf('Phase5 log: %s\n', logpath);
@@ -122,7 +129,7 @@ for i = 1:length(scenarios)
     switcher_cfg.detector_attack_time = detection_time;
     try
         [u_res, mode_hist, switch_times, y_res] = simulate_resilient_closedloop_euler( ...
-            ss(G_fwd), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg);
+            ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg);
         fprintf(lf, 'Resilient sim: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
     catch ME
         fprintf(lf, 'Resilient sim ERROR: %s\n', ME.message);
@@ -318,13 +325,15 @@ function ss_sys = safe_controller_ss(C, plant_ss)
     end
 end
 
-function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_euler(plant_ss, C_r, C_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg)
+function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_r, C_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg)
     % Self-consistent resilient closed-loop simulation.
     % Mode 1: 2DoF control u = C_r*r - C_y*y_meas
     % Mode 2: PID control on attacked measurement error
 
     plant_ss = ss(plant_ss);
+    sensor_ss = ss(sensor_ss);
     A = plant_ss.A; B = plant_ss.B; C = plant_ss.C; D = plant_ss.D;
+    As = sensor_ss.A; Bs = sensor_ss.B; Cs = sensor_ss.C; Ds = sensor_ss.D;
 
     Cr_ss = safe_controller_ss(C_r, plant_ss);
     Cy_ss = safe_controller_ss(C_y, plant_ss);
@@ -334,11 +343,13 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
     Ap = Cpid_ss.A; Bp = Cpid_ss.B; Cpm = Cpid_ss.C; Dp = Cpid_ss.D;
 
     nx_p = size(A,1);
+    nx_s = size(As,1);
     nx_r = size(Ar,1);
     nx_y = size(Ay,1);
     nx_pidx = size(Ap,1);
 
     xp = zeros(nx_p,1);
+    xs = zeros(nx_s,1);
     xr = zeros(nx_r,1);
     xy = zeros(nx_y,1);
     xpid = zeros(nx_pidx,1);
@@ -372,7 +383,13 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
         end
 
         yk = C * xp + D * u_prev;
-        y_meas = apply_attack_scalar(yk, t(k), attack_cfg);
+        if nx_s > 0
+            y_s = Cs * xs + Ds * yk;
+            xs = xs + (As * xs + Bs * yk) * dt;
+        else
+            y_s = yk;
+        end
+        y_meas = apply_attack_scalar(y_s, t(k), attack_cfg);
 
         if k >= switch_index
             if mode ~= 2

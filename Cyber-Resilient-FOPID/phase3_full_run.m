@@ -9,12 +9,19 @@
 timestamp = datestr(now,'yyyymmdd_HHMMSS');
 logdir = fullfile(pwd, 'phase3_results');
 if ~exist(logdir,'dir'), mkdir(logdir); end
-logfile = fullfile(logdir, ['phase3_run_' timestamp '.log']);
+global AVR_SHARED_LOG_FID AVR_SHARED_LOG_PATH
+if exist('AVR_SHARED_LOG_FID','var') && ~isempty(AVR_SHARED_LOG_FID) && AVR_SHARED_LOG_FID > 0
+    fidlog = AVR_SHARED_LOG_FID;
+    closeLog = false;
+    logfile = AVR_SHARED_LOG_PATH;
+else
+    logfile = fullfile(logdir, ['phase3_run_' timestamp '.log']);
+    fidlog = fopen(logfile,'w');
+    closeLog = fidlog > 2;
+    if fidlog < 0, error('Cannot open log file'); end
+end
 csvfile = fullfile(logdir, ['phase3_summary_' timestamp '.csv']);
 matfile = fullfile(logdir, ['phase3_data_' timestamp '.mat']);
-
-fidlog = fopen(logfile,'w');
-if fidlog < 0, error('Cannot open log file'); end
 fprintf(fidlog, 'Phase3 full run log — %s\n', datestr(now));
 
 try

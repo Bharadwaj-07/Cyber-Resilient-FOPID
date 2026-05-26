@@ -7,14 +7,21 @@ try
 
     % Prepare results folder and log
     outdir = fullfile('results','phase3'); if ~exist(outdir,'dir'), mkdir(outdir); end
+    global AVR_SHARED_LOG_FID AVR_SHARED_LOG_PATH
     run_ts = datestr(now,'yyyymmdd_HHMMSS');
-    logpath = fullfile(outdir, ['phase3_quick_run_' run_ts '.log']);
-    lf = fopen(logpath,'w');
-    closeLog = lf > 2;
-    if lf < 0
-        warning('Could not open %s for writing; logging to console only.', logpath);
-        lf = 1;
+    if exist('AVR_SHARED_LOG_FID','var') && ~isempty(AVR_SHARED_LOG_FID) && AVR_SHARED_LOG_FID > 0
+        lf = AVR_SHARED_LOG_FID;
         closeLog = false;
+        logpath = AVR_SHARED_LOG_PATH;
+    else
+        logpath = fullfile(outdir, ['phase3_quick_run_' run_ts '.log']);
+        lf = fopen(logpath,'w');
+        closeLog = lf > 2;
+        if lf < 0
+            warning('Could not open %s for writing; logging to console only.', logpath);
+            lf = 1;
+            closeLog = false;
+        end
     end
     fprintf(lf,'Phase3 quick run log - %s\n', datestr(now));
     fprintf('Phase3 quick log: %s\n', logpath);

@@ -51,14 +51,22 @@ end
 % Prepare Phase 4 log for this switcher invocation
 outdir4 = fullfile('results','phase4'); if ~exist(outdir4,'dir'), mkdir(outdir4); end
 run_ts = datestr(now,'yyyymmdd_HHMMSS');
-logpath4 = fullfile(outdir4, sprintf('phase4_switcher_%s.log', run_ts));
-lf = fopen(logpath4,'w');
+global AVR_SHARED_LOG_FID AVR_SHARED_LOG_PATH
+if exist('AVR_SHARED_LOG_FID','var') && ~isempty(AVR_SHARED_LOG_FID) && AVR_SHARED_LOG_FID > 0
+    lf = AVR_SHARED_LOG_FID;
+    logpath4 = AVR_SHARED_LOG_PATH;
+else
+    logpath4 = fullfile(outdir4, sprintf('phase4_switcher_%s.log', run_ts));
+    lf = fopen(logpath4,'w');
+end
 if lf > 0
     fprintf(lf, 'AVR_SWITCHER log - %s\n', datestr(now));
     fprintf(lf, 'hysteresis_time=%.3f, recovery_time=%.3f, initial_mode=%d\n', switcher_config.hysteresis_time, switcher_config.recovery_time, switcher_config.initial_mode);
     if isfield(switcher_config,'detector_attack_flag'), fprintf(lf, 'detector_attack_flag=%d\n', double(switcher_config.detector_attack_flag)); end
     if isfield(switcher_config,'detector_attack_time'), fprintf(lf, 'detector_attack_time=%s\n', num2str(switcher_config.detector_attack_time)); end
-    fprintf('Phase4 switcher log: %s\n', logpath4);
+    if ~exist('AVR_SHARED_LOG_FID','var') || isempty(AVR_SHARED_LOG_FID) || AVR_SHARED_LOG_FID <= 0
+        fprintf('Phase4 switcher log: %s\n', logpath4);
+    end
 end
 
 % Compute error signal
