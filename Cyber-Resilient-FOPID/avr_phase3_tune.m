@@ -80,7 +80,7 @@ for tfac = threshold_factors
                         % Switcher (simulate control action)
                         switcher_cfg.detector_attack_flag = attack_flag;
                         switcher_cfg.detector_attack_time = detection_time;
-                        [u_switched, mode_history, switch_times] = avr_switcher(y_meas, t, r, C_y_2dof, C_pid, switcher_cfg);
+                        [u_switched, mode_history, switch_times] = avr_switcher(y_meas, t, r, C_r_2dof, C_y_2dof, C_pid, switcher_cfg);
                         % approximate plant response to control
                         try
                             y_switched = lsim(G_fwd, u_switched, t);

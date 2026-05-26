@@ -81,7 +81,7 @@ for i = 1:length(attack_types)
     switcher_cfg = switcher_cfg;
     switcher_cfg.detector_attack_flag = attack_flag;
     switcher_cfg.detector_attack_time = detection_time;
-    [u_switched, mode_history, switch_times] = avr_switcher(y_meas, t, r, C_y_2dof, C_pid, switcher_cfg);
+    [u_switched, mode_history, switch_times] = avr_switcher(y_meas, t, r, C_r_2dof, C_y_2dof, C_pid, switcher_cfg);
 
     % Re-simulate plant with switched control by applying u_switched as external input is nontrivial.
     % Instead, approximate resulting output y_switched by combining controller output and plant input via lsim

@@ -38,6 +38,13 @@ try
         else
             C_2dof_y = [];
         end
+        if isfield(data,'C_r')
+            C_2dof_r = data.C_r;
+        elseif isfield(data,'C_r_2dof')
+            C_2dof_r = data.C_r_2dof;
+        else
+            C_2dof_r = C_2dof_y;
+        end
         if isfield(data,'C_y_1dof')
             C_pid = data.C_y_1dof;
         else
@@ -57,6 +64,7 @@ try
             warning('Using fallback PID');
         end
         C_2dof_y = C_pid; % fallback: treat PID as 2DoF feedback path
+        C_2dof_r = C_pid;
     end
 
     % Time base and reference
@@ -133,7 +141,7 @@ try
         try
             switcher_config.detector_attack_flag = attack_flag;
             switcher_config.detector_attack_time = detection_time;
-            [u, mode_history, switch_times] = avr_switcher(y_meas, t, r_ref, C_2dof_y, C_pid, switcher_config);
+            [u, mode_history, switch_times] = avr_switcher(y_meas, t, r_ref, C_2dof_r, C_2dof_y, C_pid, switcher_config);
         catch ME
             warning('Switcher failed: %s', ME.message);
             u = zeros(size(t)); mode_history = ones(size(t)); switch_times = [];

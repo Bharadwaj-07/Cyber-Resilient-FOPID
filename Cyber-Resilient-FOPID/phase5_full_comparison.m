@@ -119,7 +119,7 @@ for i = 1:length(scenarios)
     switcher_cfg.detector_attack_flag = attack_flag;
     switcher_cfg.detector_attack_time = detection_time;
     try
-        [u_res, mode_hist, switch_times] = avr_switcher(y_meas, t, r, C_2dof_y, C_pid, switcher_cfg);
+        [u_res, mode_hist, switch_times] = avr_switcher(y_meas, t, r, C_2dof_r, C_2dof_y, C_pid, switcher_cfg);
         fprintf(lf, 'Switcher: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
     catch ME
         fprintf(lf, 'Switcher ERROR: %s\n', ME.message);

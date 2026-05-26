@@ -1,6 +1,6 @@
-function [u, mode_history, switch_times] = avr_switcher(y_meas, t, r_ref, C_2dof_y, C_pid, switcher_config)
+function [u, mode_history, switch_times] = avr_switcher(y_meas, t, r_ref, C_2dof_r, C_2dof_y, C_pid, switcher_config)
 % AVR_SWITCHER Hysteresis-based switching between 2DoF and PID controllers
-% [u, mode_history, switch_times] = avr_switcher(y_meas, t, r_ref, C_2dof_y, C_pid, switcher_config)
+% [u, mode_history, switch_times] = avr_switcher(y_meas, t, r_ref, C_2dof_r, C_2dof_y, C_pid, switcher_config)
 %
 % Inputs:
 %  y_meas: N×1 measurement (possibly attacked)
@@ -21,7 +21,7 @@ function [u, mode_history, switch_times] = avr_switcher(y_meas, t, r_ref, C_2dof
 %  mode_history: N×1 integer mode (1=normal,2=attacking,3=recovery)
 %  switch_times: Mx3 [time, from_mode, to_mode]
 
-if nargin < 6 || isempty(switcher_config), switcher_config = struct(); end
+if nargin < 7 || isempty(switcher_config), switcher_config = struct(); end
 if ~isfield(switcher_config,'hysteresis_time'), switcher_config.hysteresis_time = 2.0; end
 if ~isfield(switcher_config,'recovery_time'), switcher_config.recovery_time = 0.5; end
 if ~isfield(switcher_config,'initial_mode'), switcher_config.initial_mode = 1; end
@@ -33,6 +33,19 @@ t = t(:); y_meas = y_meas(:); r_ref = r_ref(:);
 N = length(t);
 if length(y_meas) ~= N || length(r_ref) ~= N
     error('t, y_meas, and r_ref must have same length');
+end
+
+% Backward compatibility: if callers still pass the old 5-argument controller
+% pattern, interpret the 2DoF pair as the same controller.
+if nargin < 7
+    switcher_config = struct();
+end
+if nargin < 6
+    error('avr_switcher requires at least one 2DoF controller and a PID controller');
+end
+if nargin < 7 && ~isstruct(C_pid)
+    C_pid = C_2dof_y;
+    C_2dof_y = C_2dof_r;
 end
 
 % Prepare Phase 4 log for this switcher invocation
@@ -122,10 +135,16 @@ end
 % To implement bumpless transfer we simulate both controllers in state-space
 % continuously and switch outputs while preserving internal states.
 % Use safe conversion to avoid improper TF -> SS errors
+ss_cr = safe_controller_ss(C_2dof_r);
 ss_c2 = safe_controller_ss(C_2dof_y);
 ss_pid = safe_controller_ss(C_pid);
 
 % Extract state-space matrices (handle empty controllers)
+if isempty(ss_cr)
+    Ar = []; Br = []; Cr = []; Dr = [];
+else
+    [Ar,Br,Cr,Dr] = ssdata(ss_cr);
+end
 if isempty(ss_c2)
     A2 = []; B2 = []; C2 = []; D2 = [];
 else
@@ -138,7 +157,8 @@ else
 end
 
 % Initialize controller states
-n2 = 0; np = 0;
+n2 = 0; nr = 0; np = 0;
+if ~isempty(Ar), nr = size(Ar,1); xr = zeros(nr,1); else xr = []; end
 if ~isempty(A2), n2 = size(A2,1); x2 = zeros(n2,1); else x2 = [] ; end
 if ~isempty(Ap), np = size(Ap,1); xp = zeros(np,1); else xp = []; end
 
@@ -147,9 +167,11 @@ state_dumps = [];
 % optionally preallocate full state histories
 if switcher_config.persist_state_history
     xp_hist = zeros(N, max(1,np));
+    xr_hist = zeros(N, max(1,nr));
     x2_hist = zeros(N, max(1,n2));
 else
     xp_hist = [];
+    xr_hist = [];
     x2_hist = [];
 end
 
@@ -166,10 +188,17 @@ for k = 1:N
 
     ek = e(k);
 
+    if ~isempty(Ar)
+        xr_dot = Ar * xr + Br * r_ref(k);
+        ur = Cr * xr + Dr * r_ref(k);
+    else
+        xr_dot = [];
+        ur = 0;
+    end
     % update both controllers' internal states and outputs
     if ~isempty(A2)
-        x2_dot = A2 * x2 + B2 * ek;
-        y2 = C2 * x2 + D2 * ek;
+        x2_dot = A2 * x2 + B2 * y_meas(k);
+        y2 = C2 * x2 + D2 * y_meas(k);
     else
         x2_dot = [];
         y2 = 0;
@@ -251,7 +280,7 @@ for k = 1:N
 
     % Now compute outputs: use active mode's output, but update states after computing output
     if mode == 1
-        u_k = y2;
+        u_k = ur - y2;
     else
         u_k = yp;
     end
@@ -264,12 +293,16 @@ for k = 1:N
     if ~isempty(A2)
         x2 = x2 + x2_dot * dt;
     end
+    if ~isempty(Ar)
+        xr = xr + xr_dot * dt;
+    end
     if ~isempty(Ap)
         xp = xp + xp_dot * dt;
     end
     % store histories if requested
     if switcher_config.persist_state_history
         if ~isempty(xp), xp_hist(k,1:np) = xp'; end
+        if ~isempty(xr), xr_hist(k,1:nr) = xr'; end
         if ~isempty(x2), x2_hist(k,1:n2) = x2'; end
     end
 end
@@ -303,7 +336,7 @@ if exist('lf','var') && lf>0
     if switcher_config.persist_state_history
         try
             fname = fullfile(outdir4, sprintf('phase4_states_%s.mat', run_ts));
-            save(fname, 'xp_hist', 'x2_hist', 't', 'switch_times', 'state_dumps');
+            save(fname, 'xp_hist', 'xr_hist', 'x2_hist', 't', 'switch_times', 'state_dumps');
             fprintf(lf, 'Saved full state history to %s\n', fname);
         catch ME
             fprintf(lf, 'Failed saving full state history: %s\n', ME.message);
