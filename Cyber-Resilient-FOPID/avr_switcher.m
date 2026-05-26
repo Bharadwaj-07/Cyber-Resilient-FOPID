@@ -27,6 +27,7 @@ if ~isfield(switcher_config,'recovery_time'), switcher_config.recovery_time = 0.
 if ~isfield(switcher_config,'initial_mode'), switcher_config.initial_mode = 1; end
 if ~isfield(switcher_config,'detector_attack_flag'), switcher_config.detector_attack_flag = false; end
 if ~isfield(switcher_config,'detector_attack_time'), switcher_config.detector_attack_time = NaN; end
+if ~isfield(switcher_config,'persist_state_history'), switcher_config.persist_state_history = false; end
 
 t = t(:); y_meas = y_meas(:); r_ref = r_ref(:);
 N = length(t);
@@ -120,16 +121,9 @@ end
 % Now compute controller outputs by simulating controller TFs on error but applying mode mask
 % To implement bumpless transfer we simulate both controllers in state-space
 % continuously and switch outputs while preserving internal states.
-try
-    ss_c2 = ss(C_2dof_y);
-catch
-    ss_c2 = [];
-end
-try
-    ss_pid = ss(C_pid);
-catch
-    ss_pid = [];
-end
+% Use safe conversion to avoid improper TF -> SS errors
+ss_c2 = safe_controller_ss(C_2dof_y);
+ss_pid = safe_controller_ss(C_pid);
 
 % Extract state-space matrices (handle empty controllers)
 if isempty(ss_c2)
@@ -147,6 +141,17 @@ end
 n2 = 0; np = 0;
 if ~isempty(A2), n2 = size(A2,1); x2 = zeros(n2,1); else x2 = [] ; end
 if ~isempty(Ap), np = size(Ap,1); xp = zeros(np,1); else xp = []; end
+
+% prepare state dumps array for switch events
+state_dumps = [];
+% optionally preallocate full state histories
+if switcher_config.persist_state_history
+    xp_hist = zeros(N, max(1,np));
+    x2_hist = zeros(N, max(1,n2));
+else
+    xp_hist = [];
+    x2_hist = [];
+end
 
 % previous output for bumpless target
 u_prev = 0;
@@ -180,7 +185,7 @@ for k = 1:N
     % Determine mode transitions (detector hint takes precedence)
     if use_detector_hint && ~detector_switch_done
         if t(k) >= switcher_config.detector_attack_time
-            if mode ~= 2
+                if mode ~= 2
                 from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
                 % perform bumpless adjustment: set xp so that yp matches previous u_prev
                 if ~isempty(Cp) && any(Cp(:))
@@ -190,13 +195,16 @@ for k = 1:N
                     catch ME
                         if exist('lf','var') && lf>0, fprintf(lf,'Bumpless adjust (PID) failed at t=%.4f: %s\n', t(k), ME.message); end
                     end
+                    % capture state dump
+                    sd.time = t(k); sd.from = from_mode; sd.to = mode; sd.xp = xp; sd.x2 = x2;
+                    state_dumps = [state_dumps; sd];
                 end
             end
             detector_switch_done = true;
         end
     else
         % use metric-based switching as before
-        if mode == 1 && metric(k) > metric_thresh
+            if mode == 1 && metric(k) > metric_thresh
             from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
             % adjust PID state to avoid jump
             if ~isempty(Cp) && any(Cp(:))
@@ -207,6 +215,9 @@ for k = 1:N
                         if exist('lf','var') && lf>0, fprintf(lf,'Bumpless adjust (PID) failed at t=%.4f: %s\n', t(k), ME.message); end
                     end
             end
+            % capture state dump
+            sd.time = t(k); sd.from = from_mode; sd.to = mode; sd.xp = xp; sd.x2 = x2;
+            state_dumps = [state_dumps; sd];
         elseif mode == 2
             if t(k) - last_switch_time >= switcher_config.recovery_time
                 recent_metric = mean(metric(max(1,k-win):k));
@@ -220,7 +231,7 @@ for k = 1:N
                 if recent_metric < metric_thresh/2
                     from_mode = mode; mode = 1; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
                     % adjust 2DoF state to align outputs
-                    if ~isempty(C2) && any(C2(:))
+                            if ~isempty(C2) && any(C2(:))
                         try
                             x2 = pinv(C2) * (yp - D2 * ek);
                             if exist('lf','var') && lf>0, fprintf(lf,'Performed bumpless adjust on 2DoF at t=%.4f (recovery->normal)\n', t(k)); end
@@ -228,6 +239,9 @@ for k = 1:N
                             if exist('lf','var') && lf>0, fprintf(lf,'Bumpless adjust (2DoF) failed at t=%.4f: %s\n', t(k), ME.message); end
                         end
                     end
+                            % capture state dump after recovery->normal
+                            sd.time = t(k); sd.from = from_mode; sd.to = mode; sd.xp = xp; sd.x2 = x2;
+                            state_dumps = [state_dumps; sd];
                 elseif recent_metric > metric_thresh
                     from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
                 end
@@ -253,6 +267,11 @@ for k = 1:N
     if ~isempty(Ap)
         xp = xp + xp_dot * dt;
     end
+    % store histories if requested
+    if switcher_config.persist_state_history
+        if ~isempty(xp), xp_hist(k,1:np) = xp'; end
+        if ~isempty(x2), x2_hist(k,1:n2) = x2'; end
+    end
 end
 
 % After simulation, log switch times if logfile open
@@ -262,7 +281,58 @@ if exist('lf','var') && lf>0
         fprintf(lf,'t=%.4f: %d -> %d\n', switch_times(s,1), switch_times(s,2), switch_times(s,3));
     end
     fprintf(lf,'Final mode: %d\n', mode);
+    % Print state dumps
+    if ~isempty(state_dumps)
+        fprintf(lf,'\nState dumps at switch events:\n');
+        for s=1:length(state_dumps)
+            sd = state_dumps(s);
+            try
+                xp_str = mat2str(sd.xp',6);
+            catch
+                xp_str = '<empty>';
+            end
+            try
+                x2_str = mat2str(sd.x2',6);
+            catch
+                x2_str = '<empty>';
+            end
+            fprintf(lf,'t=%.4f: %d->%d, xp=%s, x2=%s\n', sd.time, sd.from, sd.to, xp_str, x2_str);
+        end
+    end
+    % save full histories if requested
+    if switcher_config.persist_state_history
+        try
+            fname = fullfile(outdir4, sprintf('phase4_states_%s.mat', run_ts));
+            save(fname, 'xp_hist', 'x2_hist', 't', 'switch_times', 'state_dumps');
+            fprintf(lf, 'Saved full state history to %s\n', fname);
+        catch ME
+            fprintf(lf, 'Failed saving full state history: %s\n', ME.message);
+        end
+    end
     fclose(lf);
 end
 
+end
+
+function ss_sys = safe_controller_ss(C)
+    % Attempt to convert controller C to state-space.
+    % If conversion fails (improper TF), fall back to a static gain SS using DC gain if available.
+    try
+        ss_sys = ss(C);
+        return;
+    catch
+        try
+            k = dcgain(C);
+            if isfinite(k)
+                ss_sys = ss(k);
+                return;
+            else
+                ss_sys = ss(1);
+                return;
+            end
+        catch
+            ss_sys = ss(1);
+            return;
+        end
+    end
 end

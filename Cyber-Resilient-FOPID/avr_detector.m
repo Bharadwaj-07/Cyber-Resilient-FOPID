@@ -23,12 +23,16 @@ function [attack_flag, confidence, detection_time, residuals] = avr_detector(y_m
 if nargin < 5 || isempty(detector_config)
     detector_config = struct();
 end
-if ~isfield(detector_config,'baseline_window'), detector_config.baseline_window = 5; end
-if ~isfield(detector_config,'window_size'), detector_config.window_size = 100; end
-if ~isfield(detector_config,'threshold_factor'), detector_config.threshold_factor = 2; end
+% Tightened defaults to reduce false/early triggers; user can override via detector_config
+if ~isfield(detector_config,'baseline_window'), detector_config.baseline_window = 6; end
+if ~isfield(detector_config,'window_size'), detector_config.window_size = 200; end
+if ~isfield(detector_config,'threshold_factor'), detector_config.threshold_factor = 3; end
 if ~isfield(detector_config,'Q'), detector_config.Q = 1e-6; end
 if ~isfield(detector_config,'R'), detector_config.R = 1e-4; end
-if ~isfield(detector_config,'min_consecutive'), detector_config.min_consecutive = 3; end
+if ~isfield(detector_config,'min_consecutive'), detector_config.min_consecutive = 5; end
+if ~isfield(detector_config,'startup_suppress'), detector_config.startup_suppress = detector_config.baseline_window; end
+if ~isfield(detector_config,'confidence_cap'), detector_config.confidence_cap = 1e12; end
+if ~isfield(detector_config,'residual_clamp'), detector_config.residual_clamp = 1e6; end
 
 % Prepare
 t = t(:); y_meas = y_meas(:); r_ref = r_ref(:);
@@ -98,6 +102,10 @@ for k = 1:N
     % predictor
     y_hat = C * xhat + D * r_ref(max(1,k));
     e = y_meas(k) - y_hat;
+    % clamp residual to avoid numerical blowups
+    rc = detector_config.residual_clamp;
+    if ~isfinite(e), e = sign(e)*rc; end
+    e = max(min(e, rc), -rc);
     residuals(k) = e;
 
     % update xhat
@@ -119,8 +127,8 @@ for k = 1:N
         % Use median for robustness to outliers and reduce sensitivity to early transients
         Jk = abs(e) + median(abs(residuals(win_start:k)));
 
-        % Only evaluate detection after baseline threshold computed
-        if ~isnan(threshold) && ~attack_flag
+        % Only evaluate detection after baseline threshold computed and startup suppression
+        if ~isnan(threshold) && ~attack_flag && t(k) >= detector_config.startup_suppress
             if Jk > threshold
                 exceed_count = exceed_count + 1;
             else
@@ -128,8 +136,9 @@ for k = 1:N
             end
             if exceed_count >= detector_config.min_consecutive
                 attack_flag = true;
-                confidence = Jk;
-                detection_time = t(k - detector_config.min_consecutive + 1);
+                % clamp confidence to avoid numerical extremes
+                confidence = min(Jk, detector_config.confidence_cap);
+                detection_time = t(k);
             end
         end
 end

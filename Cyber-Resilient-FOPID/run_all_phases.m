@@ -107,6 +107,20 @@ try
 catch ME
     fprintf(fid, 'Error collecting phase4 logs: %s\n', ME.message);
 end
+% Collect Phase4 state history files if present
+try
+    if exist(p4dir,'dir')
+        files_s = dir(fullfile(p4dir,'phase4_states_*.mat'));
+        for k=1:length(files_s)
+            src = fullfile(p4dir, files_s(k).name);
+            dest = fullfile(outRoot, files_s(k).name);
+            copyfile(src, dest);
+            fprintf(fid, 'Copied %s to %s\n', src, dest);
+        end
+    end
+catch ME
+    fprintf(fid, 'Error collecting phase4 state files: %s\n', ME.message);
+end
 
 fclose(fid);
 fprintf('Run complete. See %s for details.\n', logfile);
