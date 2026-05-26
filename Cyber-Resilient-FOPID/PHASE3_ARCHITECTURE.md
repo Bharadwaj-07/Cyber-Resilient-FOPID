@@ -489,6 +489,26 @@ These additions are implemented to enable block-wise verification: we can now tu
   - [ ] Function headers with input/output specs
   - [ ] Example usage in each file
 
+## 8. Implementation Status
+
+The repository now contains the working Phase 3 to Phase 5 workflow:
+
+- `avr_attack_injector.m` injects bias, ramp, and sinusoidal measurement attacks.
+- `avr_detector.m` computes residuals with a baseline threshold and a consecutive-exceedance decision rule.
+- `avr_switcher.m` supports both heuristic switching and detector-driven switching to PID.
+- `avr_phase3_test.m` runs the attack, detect, switch, and metric capture flow per attack type.
+- `avr_phase3_tune.m` sweeps detector and switcher parameters and saves the recommended configuration.
+- `avr_validation_matrix.m` prints the consolidated attack-versus-metric summary.
+- `phase3_full_run.m` writes the broader batch log, CSV summary, MAT summary, and scenario plots.
+- `PHASE3_EXECUTION_GUIDE.md` documents run order, expected results, and debugging knobs.
+
+Expected healthy behavior:
+
+- Clean baseline signals should not trigger detection.
+- Detections should occur after the configured attack start time.
+- Switching should move to PID without chatter or control spikes.
+- Validation should show bounded ITAE and finite detection delay.
+
 ---
 
 ## 9. Success Criteria

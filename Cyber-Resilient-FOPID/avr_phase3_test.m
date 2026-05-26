@@ -78,6 +78,9 @@ for i = 1:length(attack_types)
     [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_fwd, r, detector_cfg);
 
     % Switcher: use C_y_2dof as error-path controller for 2DoF
+    switcher_cfg = switcher_cfg;
+    switcher_cfg.detector_attack_flag = attack_flag;
+    switcher_cfg.detector_attack_time = detection_time;
     [u_switched, mode_history, switch_times] = avr_switcher(y_meas, t, r, C_y_2dof, C_pid, switcher_cfg);
 
     % Re-simulate plant with switched control by applying u_switched as external input is nontrivial.

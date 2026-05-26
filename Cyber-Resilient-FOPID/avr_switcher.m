@@ -13,6 +13,8 @@ function [u, mode_history, switch_times] = avr_switcher(y_meas, t, r_ref, C_2dof
 %    .recovery_time (default 0.5)
 %    .sampling_interval (default inferred from t)
 %    .initial_mode (1=normal)
+%    .detector_attack_flag (optional bool): if true, force switch at detector_attack_time
+%    .detector_attack_time (optional float): detection timestamp used for the forced switch
 %
 % Outputs:
 %  u: N×1 control signal (controller output)
@@ -23,6 +25,8 @@ if nargin < 6 || isempty(switcher_config), switcher_config = struct(); end
 if ~isfield(switcher_config,'hysteresis_time'), switcher_config.hysteresis_time = 2.0; end
 if ~isfield(switcher_config,'recovery_time'), switcher_config.recovery_time = 0.5; end
 if ~isfield(switcher_config,'initial_mode'), switcher_config.initial_mode = 1; end
+if ~isfield(switcher_config,'detector_attack_flag'), switcher_config.detector_attack_flag = false; end
+if ~isfield(switcher_config,'detector_attack_time'), switcher_config.detector_attack_time = NaN; end
 
 t = t(:); y_meas = y_meas(:); r_ref = r_ref(:);
 N = length(t);
@@ -59,13 +63,25 @@ metric = movstd(dy, win);
 % Thresholds (tunable)
 metric_thresh = 5 * std(metric(1:max(1,round(0.5/(t(2)-t(1))))));
 
+use_detector_hint = logical(switcher_config.detector_attack_flag) && isfinite(switcher_config.detector_attack_time);
+detector_switch_done = false;
+
 for k = 1:N
     % Mode transitions
-    if mode == 1
+    if use_detector_hint && ~detector_switch_done
+        if t(k) >= switcher_config.detector_attack_time
+            if mode ~= 2
+                from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
+            end
+            detector_switch_done = true;
+        end
+    elseif mode == 1
         if metric(k) > metric_thresh
             from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
         end
-    elseif mode == 2
+    end
+
+    if mode == 2
         % stay in PID for at least recovery_time seconds
         if t(k) - last_switch_time >= switcher_config.recovery_time
             % check if metric has settled
@@ -89,30 +105,136 @@ for k = 1:N
 end
 
 % Now compute controller outputs by simulating controller TFs on error but applying mode mask
-% For each contiguous segment with same mode, simulate lsim for that segment
-segments = [1; find(diff(mode_history)~=0)+1; N+1];
-for s = 1:(length(segments)-1)
-    i1 = segments(s);
-    i2 = segments(s+1)-1;
-    tt = t(i1:i2);
-    ee = e(i1:i2);
-    if mode_history(i1) == 1
-        % 2DoF: use C_2dof_y (feedback path controller)
-        try
-            uu = lsim(C_2dof_y, ee, tt);
-        catch
-            % fallback: simple P action using DC gain
-            K = dcgain(C_2dof_y); uu = K * ee;
+% To implement bumpless transfer we simulate both controllers in state-space
+% continuously and switch outputs while preserving internal states.
+try
+    ss_c2 = ss(C_2dof_y);
+catch
+    ss_c2 = [];
+end
+try
+    ss_pid = ss(C_pid);
+catch
+    ss_pid = [];
+end
+
+% Extract state-space matrices (handle empty controllers)
+if isempty(ss_c2)
+    A2 = []; B2 = []; C2 = []; D2 = [];
+else
+    [A2,B2,C2,D2] = ssdata(ss_c2);
+end
+if isempty(ss_pid)
+    Ap = []; Bp = []; Cp = []; Dp = [];
+else
+    [Ap,Bp,Cp,Dp] = ssdata(ss_pid);
+end
+
+% Initialize controller states
+n2 = 0; np = 0;
+if ~isempty(A2), n2 = size(A2,1); x2 = zeros(n2,1); else x2 = [] ; end
+if ~isempty(Ap), np = size(Ap,1); xp = zeros(np,1); else xp = []; end
+
+% previous output for bumpless target
+u_prev = 0;
+
+% Main time-stepping simulation computing controller states and outputs
+for k = 1:N
+    if k == 1
+        dt = t(1);
+    else
+        dt = t(k) - t(k-1);
+    end
+
+    ek = e(k);
+
+    % update both controllers' internal states and outputs
+    if ~isempty(A2)
+        x2_dot = A2 * x2 + B2 * ek;
+        y2 = C2 * x2 + D2 * ek;
+    else
+        x2_dot = [];
+        y2 = 0;
+    end
+    if ~isempty(Ap)
+        xp_dot = Ap * xp + Bp * ek;
+        yp = Cp * xp + Dp * ek;
+    else
+        xp_dot = [];
+        yp = 0;
+    end
+
+    % Determine mode transitions (detector hint takes precedence)
+    if use_detector_hint && ~detector_switch_done
+        if t(k) >= switcher_config.detector_attack_time
+            if mode ~= 2
+                from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
+                % perform bumpless adjustment: set xp so that yp matches previous u_prev
+                if ~isempty(Cp) && any(Cp(:))
+                    try
+                        xp = pinv(Cp) * (u_prev - Dp * ek);
+                    catch
+                        % ignore adjustment if fails
+                    end
+                end
+            end
+            detector_switch_done = true;
         end
     else
-        % PID
-        try
-            uu = lsim(C_pid, ee, tt);
-        catch
-            K = dcgain(C_pid); uu = K * ee;
+        % use metric-based switching as before
+        if mode == 1 && metric(k) > metric_thresh
+            from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
+            % adjust PID state to avoid jump
+            if ~isempty(Cp) && any(Cp(:))
+                try
+                    xp = pinv(Cp) * (y2 - Dp * ek);
+                catch
+                end
+            end
+        elseif mode == 2
+            if t(k) - last_switch_time >= switcher_config.recovery_time
+                recent_metric = mean(metric(max(1,k-win):k));
+                if recent_metric < metric_thresh/2
+                    from_mode = mode; mode = 3; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
+                end
+            end
+        elseif mode == 3
+            if t(k) - last_switch_time >= switcher_config.hysteresis_time
+                recent_metric = mean(metric(max(1,k-win):k));
+                if recent_metric < metric_thresh/2
+                    from_mode = mode; mode = 1; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
+                    % adjust 2DoF state to align outputs
+                    if ~isempty(C2) && any(C2(:))
+                        try
+                            x2 = pinv(C2) * (yp - D2 * ek);
+                        catch
+                        end
+                    end
+                elseif recent_metric > metric_thresh
+                    from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
+                end
+            end
         end
     end
-    u(i1:i2) = uu;
+
+    % Now compute outputs: use active mode's output, but update states after computing output
+    if mode == 1
+        u_k = y2;
+    else
+        u_k = yp;
+    end
+
+    u(k) = u_k;
+    mode_history(k) = mode;
+    u_prev = u_k;
+
+    % integrate states (Euler)
+    if ~isempty(A2)
+        x2 = x2 + x2_dot * dt;
+    end
+    if ~isempty(Ap)
+        xp = xp + xp_dot * dt;
+    end
 end
 
 end

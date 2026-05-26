@@ -28,6 +28,7 @@ if ~isfield(detector_config,'window_size'), detector_config.window_size = 100; e
 if ~isfield(detector_config,'threshold_factor'), detector_config.threshold_factor = 2; end
 if ~isfield(detector_config,'Q'), detector_config.Q = 1e-6; end
 if ~isfield(detector_config,'R'), detector_config.R = 1e-4; end
+if ~isfield(detector_config,'min_consecutive'), detector_config.min_consecutive = 3; end
 
 % Prepare
 t = t(:); y_meas = y_meas(:); r_ref = r_ref(:);
@@ -78,6 +79,7 @@ threshold = NaN;
 attack_flag = false;
 confidence = 0;
 detection_time = NaN;
+exceed_count = 0;
 
 % Precompute indices for baseline window
 idx_baseline_end = find(t <= detector_config.baseline_window, 1, 'last');
@@ -114,14 +116,22 @@ for k = 1:N
     % Detection metric using sliding window
     win = detector_config.window_size;
     win_start = max(1, k - win + 1);
-    Jk = abs(e) + mean(abs(residuals(win_start:k)));
+        % Use median for robustness to outliers and reduce sensitivity to early transients
+        Jk = abs(e) + median(abs(residuals(win_start:k)));
 
-    if ~isnan(threshold) && ~attack_flag && Jk > threshold
-        attack_flag = true;
-        confidence = Jk;
-        detection_time = t(k);
-        % Do not break; we still fill residuals for plotting
-    end
+        % Only evaluate detection after baseline threshold computed
+        if ~isnan(threshold) && ~attack_flag
+            if Jk > threshold
+                exceed_count = exceed_count + 1;
+            else
+                exceed_count = 0;
+            end
+            if exceed_count >= detector_config.min_consecutive
+                attack_flag = true;
+                confidence = Jk;
+                detection_time = t(k - detector_config.min_consecutive + 1);
+            end
+        end
 end
 
 end
