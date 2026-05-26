@@ -276,8 +276,16 @@ function ss_sys = safe_controller_ss(C, plant_ss)
             ss_sys = ss(pid_fb);
             return;
         catch
-            % Last-resort: create a simple P controller with unit gain
-            ss_sys = ss(pid(1,0,0));
+            % Last-resort: create a simple static gain using low-frequency evaluation if possible
+            try
+                k = evalfr(C, 0);
+                if ~isfinite(k)
+                    k = 1;
+                end
+                ss_sys = ss(real(k));
+            catch
+                ss_sys = ss(1);
+            end
             return;
         end
     end

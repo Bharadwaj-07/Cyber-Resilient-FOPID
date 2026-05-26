@@ -316,13 +316,17 @@ end
 
 function ss_sys = safe_controller_ss(C)
     % Attempt to convert controller C to state-space.
-    % If conversion fails (improper TF), fall back to a static gain SS using DC gain if available.
+    % If conversion fails (improper TF), fall back to a static gain SS using a direct low-frequency evaluation.
     try
         ss_sys = ss(C);
         return;
     catch
         try
-            k = dcgain(C);
+            k = evalfr(C, 0);
+            if ~isfinite(k)
+                k = 1;
+            end
+            k = real(k);
             if isfinite(k)
                 ss_sys = ss(k);
                 return;

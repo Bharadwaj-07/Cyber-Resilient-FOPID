@@ -5,6 +5,11 @@
 addpath(pwd);
 outRoot = fullfile('results','run_all'); if ~exist(outRoot,'dir'), mkdir(outRoot); end
 logfile = fullfile(outRoot,'run_log.txt'); fid = fopen(logfile,'w');
+closeLog = fid > 2;
+if fid < 0
+    warning('Could not open %s for writing; logging to console only.', logfile);
+    fid = 1;
+end
 fprintf(fid,'Run all phases log - %s\n', datestr(now));
 
 % Phase 3: quick test (if exists)
@@ -122,7 +127,9 @@ catch ME
     fprintf(fid, 'Error collecting phase4 state files: %s\n', ME.message);
 end
 
-fclose(fid);
+if closeLog
+    fclose(fid);
+end
 fprintf('Run complete. See %s for details.\n', logfile);
 
 % Simple aggregator: look for phase5 CSV and plot ITAE comparisons
