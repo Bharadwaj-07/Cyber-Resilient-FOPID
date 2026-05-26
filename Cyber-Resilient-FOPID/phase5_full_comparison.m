@@ -115,22 +115,18 @@ for i = 1:length(scenarios)
     detection_delay = NaN; if ~isnan(detection_time), detection_delay = detection_time - attack_cfg.start_time; end
     fprintf(lf, 'Detector: flag=%d, confidence=%g, detection_time=%s, delay=%s\n', double(attack_flag), confidence, num2str(detection_time), num2str(detection_delay));
 
-    % Resilient run: switcher uses detector hint
+    % Resilient run: simulate plant + controller in closed loop using the
+    % detector timestamp as the switch point. This avoids the unstable
+    % open-loop plant replay that previously collapsed to zero output.
     switcher_cfg.detector_attack_flag = attack_flag;
     switcher_cfg.detector_attack_time = detection_time;
     try
-        [u_res, mode_hist, switch_times] = avr_switcher(y_meas, t, r, C_2dof_r, C_2dof_y, C_pid, switcher_cfg);
-        fprintf(lf, 'Switcher: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
+        [u_res, mode_hist, switch_times, y_res] = simulate_resilient_closedloop_euler( ...
+            ss(G_fwd), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg);
+        fprintf(lf, 'Resilient sim: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
     catch ME
-        fprintf(lf, 'Switcher ERROR: %s\n', ME.message);
-        u_res = zeros(size(t)); mode_hist = zeros(size(t)); switch_times = [];
-    end
-    % Simulate the plant per-step using Euler integration for higher fidelity
-    try
-        y_res = simulate_plant_euler(ss(G_fwd), u_res, t);
-    catch ME
-        fprintf(lf, 'Plant sim ERROR: %s\n', ME.message);
-        y_res = y_2dof;
+        fprintf(lf, 'Resilient sim ERROR: %s\n', ME.message);
+        u_res = zeros(size(t)); mode_hist = zeros(size(t)); switch_times = []; y_res = y_2dof;
     end
 
     % Compute metrics
@@ -319,5 +315,122 @@ function ss_sys = safe_controller_ss(C, plant_ss)
             end
             return;
         end
+    end
+end
+
+function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_euler(plant_ss, C_r, C_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg)
+    % Self-consistent resilient closed-loop simulation.
+    % Mode 1: 2DoF control u = C_r*r - C_y*y_meas
+    % Mode 2: PID control on attacked measurement error
+
+    plant_ss = ss(plant_ss);
+    A = plant_ss.A; B = plant_ss.B; C = plant_ss.C; D = plant_ss.D;
+
+    Cr_ss = safe_controller_ss(C_r, plant_ss);
+    Cy_ss = safe_controller_ss(C_y, plant_ss);
+    Cpid_ss = safe_controller_ss(C_pid, plant_ss);
+    Ar = Cr_ss.A; Br = Cr_ss.B; Crm = Cr_ss.C; Dr = Cr_ss.D;
+    Ay = Cy_ss.A; By = Cy_ss.B; Cym = Cy_ss.C; Dy = Cy_ss.D;
+    Ap = Cpid_ss.A; Bp = Cpid_ss.B; Cpm = Cpid_ss.C; Dp = Cpid_ss.D;
+
+    nx_p = size(A,1);
+    nx_r = size(Ar,1);
+    nx_y = size(Ay,1);
+    nx_pidx = size(Ap,1);
+
+    xp = zeros(nx_p,1);
+    xr = zeros(nx_r,1);
+    xy = zeros(nx_y,1);
+    xpid = zeros(nx_pidx,1);
+
+    N = length(t);
+    y = zeros(N,1);
+    u = zeros(N,1);
+    mode_history = ones(N,1);
+    switch_times = [];
+
+    mode = 1;
+    if attack_flag && isfinite(detection_time)
+        switch_index = find(t >= detection_time, 1, 'first');
+        if isempty(switch_index)
+            switch_index = N + 1;
+        end
+    else
+        switch_index = N + 1;
+    end
+
+    for k = 1:N
+        if k == 1
+            dt = t(1);
+        else
+            dt = t(k) - t(k-1);
+        end
+
+        u_prev = 0;
+        if k > 1
+            u_prev = u(k-1);
+        end
+
+        yk = C * xp + D * u_prev;
+        y_meas = apply_attack_scalar(yk, t(k), attack_cfg);
+
+        if k >= switch_index
+            if mode ~= 2
+                switch_times(end+1,:) = [t(k), mode, 2]; %#ok<AGROW>
+                mode = 2;
+            end
+        end
+        mode_history(k) = mode;
+
+        if mode == 1
+            ur = Crm * xr + Dr * r(k);
+            uy = Cym * xy + Dy * y_meas;
+            uk = ur - uy;
+            xr = xr + (Ar * xr + Br * r(k)) * dt;
+            xy = xy + (Ay * xy + By * y_meas) * dt;
+        else
+            epid = r(k) - y_meas;
+            uk = Cpm * xpid + Dp * epid;
+            xpid = xpid + (Ap * xpid + Bp * epid) * dt;
+        end
+
+        xp = xp + (A * xp + B * uk) * dt;
+        y(k) = C * xp + D * uk;
+        u(k) = uk;
+    end
+
+    if isempty(switch_times)
+        switch_times = zeros(0,3);
+    end
+end
+
+function y_attack = apply_attack_scalar(y, t, attack_cfg)
+    y_attack = y;
+    if ~isfield(attack_cfg, 'enabled') || ~attack_cfg.enabled
+        return;
+    end
+    if ~isfield(attack_cfg, 'start_time')
+        attack_cfg.start_time = 0;
+    end
+    if t < attack_cfg.start_time
+        return;
+    end
+    switch lower(string(attack_cfg.type))
+        case "bias"
+            if isfield(attack_cfg, 'magnitude')
+                y_attack = y + attack_cfg.magnitude;
+            end
+        case "ramp"
+            if isfield(attack_cfg, 'slope')
+                y_attack = y + attack_cfg.slope * (t - attack_cfg.start_time);
+            end
+        case "sine"
+            amp = 0;
+            freq = 1;
+            if isfield(attack_cfg, 'magnitude'), amp = attack_cfg.magnitude; end
+            if isfield(attack_cfg, 'frequency'), freq = attack_cfg.frequency; end
+            y_attack = y + amp * sin(2*pi*freq*(t - attack_cfg.start_time));
+        otherwise
+            y_attack = y;
     end
 end
