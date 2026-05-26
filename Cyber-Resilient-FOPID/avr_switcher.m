@@ -318,11 +318,12 @@ function ss_sys = safe_controller_ss(C)
     % Attempt to convert controller C to state-space.
     % If conversion fails (improper TF), fall back to a static gain SS using a direct low-frequency evaluation.
     try
-        if isa(C,'tf')
+        if isa(C,'tf') || isa(C,'zpk') || isa(C,'pid') || isa(C,'pidstd')
+            tfC = tf(C);
             try
-                [num, den] = tfdata(C, 'v');
+                [num, den] = tfdata(tfC, 'v');
                 if ~isempty(num) && ~isempty(den) && numel(num) >= numel(den)
-                    k = real(evalfr(C, 0));
+                    k = real(evalfr(tfC, 0));
                     if ~isfinite(k), k = 1; end
                     ss_sys = ss(k);
                     return;

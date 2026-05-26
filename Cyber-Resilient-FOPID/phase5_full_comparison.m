@@ -76,8 +76,8 @@ scenarios{end+1} = struct('name','bias_large','type','bias','magnitude',0.5,'sta
 scenarios{end+1} = struct('name','ramp','type','ramp','slope',0.05,'start_time',5);
 scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency',1,'start_time',5);
 
-% Detector & switcher defaults (from Phase3 tuning recommendations if available)
-detector_cfg = struct('baseline_window',3,'window_size',50,'threshold_factor',3,'Q',1e-6,'R',1e-4,'min_consecutive',3);
+% Detector & switcher defaults (tightened to suppress startup false positives)
+detector_cfg = struct('baseline_window',6,'window_size',200,'threshold_factor',5,'Q',1e-6,'R',1e-4,'min_consecutive',7,'startup_suppress',6);
 switcher_cfg = struct('hysteresis_time',2,'recovery_time',0.5,'initial_mode',1);
 
 % Prepare results table
@@ -267,11 +267,12 @@ function ss_sys = safe_controller_ss(C, plant_ss)
     % Try to convert controller C to state-space. If it fails (improper TF,
     % symbolic object), fall back to a PID tuned on the plant using pidtune.
     try
-        if isa(C,'tf')
+        if isa(C,'tf') || isa(C,'zpk') || isa(C,'pid') || isa(C,'pidstd')
+            tfC = tf(C);
             try
-                [num, den] = tfdata(C, 'v');
+                [num, den] = tfdata(tfC, 'v');
                 if ~isempty(num) && ~isempty(den) && numel(num) >= numel(den)
-                    k = real(evalfr(C, 0));
+                    k = real(evalfr(tfC, 0));
                     if ~isfinite(k), k = 1; end
                     ss_sys = ss(k);
                     return;

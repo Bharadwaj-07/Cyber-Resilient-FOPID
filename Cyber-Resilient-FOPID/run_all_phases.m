@@ -4,52 +4,52 @@
 
 addpath(pwd);
 outRoot = fullfile('results','run_all'); if ~exist(outRoot,'dir'), mkdir(outRoot); end
-logfile = fullfile(outRoot,'run_log.txt'); fid = fopen(logfile,'w');
-closeLog = fid > 2;
-if fid < 0
+logfile = fullfile(outRoot,'run_log.txt'); runfid = fopen(logfile,'w');
+closeLog = runfid > 2;
+if runfid < 0
     warning('Could not open %s for writing; logging to console only.', logfile);
-    fid = 1;
+    runfid = 1;
 end
-fprintf(fid,'Run all phases log - %s\n', datestr(now));
+fprintf(runfid,'Run all phases log - %s\n', datestr(now));
 
 % Phase 3: quick test (if exists)
 try
     if exist('phase3_quick_test.m','file')
-        fprintf('Running phase3_quick_test...\n'); fprintf(fid,'Running phase3_quick_test...\n');
+        fprintf('Running phase3_quick_test...\n'); fprintf(runfid,'Running phase3_quick_test...\n');
         phase3_quick_test();
-        fprintf(fid,'phase3_quick_test completed\n');
+        fprintf(runfid,'phase3_quick_test completed\n');
     else
-        fprintf(fid,'phase3_quick_test not found - skipping\n'); fprintf(fid,'phase3_quick_test not found - skipping\n');
+        fprintf(runfid,'phase3_quick_test not found - skipping\n'); fprintf(runfid,'phase3_quick_test not found - skipping\n');
     end
 catch ME
     fprintf('Phase3 quick test failed: %s\n', ME.message);
-    fprintf(fid,'Phase3 quick test failed: %s\n', ME.message);
+    fprintf(runfid,'Phase3 quick test failed: %s\n', ME.message);
 end
 
 % Phase 3: full run
 try
     if exist('phase3_full_run.m','file')
-        fprintf('Running phase3_full_run...\n'); fprintf(fid,'Running phase3_full_run...\n');
+        fprintf('Running phase3_full_run...\n'); fprintf(runfid,'Running phase3_full_run...\n');
         phase3_full_run();
-        fprintf(fid,'phase3_full_run completed\n'); fprintf(fid,'phase3_full_run completed\n');
+        fprintf(runfid,'phase3_full_run completed\n'); fprintf(runfid,'phase3_full_run completed\n');
     else
-        fprintf('phase3_full_run not found - skipping\n'); fprintf(fid,'phase3_full_run not found - skipping\n');
+        fprintf('phase3_full_run not found - skipping\n'); fprintf(runfid,'phase3_full_run not found - skipping\n');
     end
 catch ME
-    fprintf('Phase3 full run failed: %s\n', ME.message); fprintf(fid,'Phase3 full run failed: %s\n', ME.message);
+    fprintf('Phase3 full run failed: %s\n', ME.message); fprintf(runfid,'Phase3 full run failed: %s\n', ME.message);
 end
 
 % Phase 5: full comparison
 try
     if exist('phase5_full_comparison.m','file')
-        fprintf('Running phase5_full_comparison...\n'); fprintf(fid,'Running phase5_full_comparison...\n');
+        fprintf('Running phase5_full_comparison...\n'); fprintf(runfid,'Running phase5_full_comparison...\n');
         phase5_full_comparison();
-        fprintf(fid,'phase5_full_comparison completed\n'); fprintf(fid,'phase5_full_comparison completed\n');
+        fprintf(runfid,'phase5_full_comparison completed\n'); fprintf(runfid,'phase5_full_comparison completed\n');
     else
-        fprintf('phase5_full_comparison not found - skipping\n'); fprintf(fid,'phase5_full_comparison not found - skipping\n');
+        fprintf('phase5_full_comparison not found - skipping\n'); fprintf(runfid,'phase5_full_comparison not found - skipping\n');
     end
 catch ME
-    fprintf('Phase5 full comparison failed: %s\n', ME.message); fprintf(fid,'Phase5 full comparison failed: %s\n', ME.message);
+    fprintf('Phase5 full comparison failed: %s\n', ME.message); fprintf(runfid,'Phase5 full comparison failed: %s\n', ME.message);
 end
 
 % Collect per-phase logs (phase5)
@@ -61,11 +61,11 @@ try
             src = fullfile(p5dir, files(k).name);
             dest = fullfile(outRoot, files(k).name);
             copyfile(src, dest);
-            fprintf(fid, 'Copied %s to %s\n', src, dest);
+            fprintf(runfid, 'Copied %s to %s\n', src, dest);
         end
     end
 catch ME
-    fprintf(fid, 'Error collecting phase5 logs: %s\n', ME.message);
+    fprintf(runfid, 'Error collecting phase5 logs: %s\n', ME.message);
 end
 
 % Collect Phase3 logs
@@ -79,7 +79,7 @@ try
             src = fullfile(p3dir, files3(k).name);
             dest = fullfile(outRoot, files3(k).name);
             copyfile(src, dest);
-            fprintf(fid, 'Copied %s to %s\n', src, dest);
+            fprintf(runfid, 'Copied %s to %s\n', src, dest);
         end
     end
     % Also collect logs from legacy phase3_results directory if present
@@ -90,11 +90,11 @@ try
             src = fullfile(legacy_p3, files_legacy(k).name);
             dest = fullfile(outRoot, files_legacy(k).name);
             copyfile(src, dest);
-            fprintf(fid, 'Copied %s to %s\n', src, dest);
+            fprintf(runfid, 'Copied %s to %s\n', src, dest);
         end
     end
 catch ME
-    fprintf(fid, 'Error collecting phase3 logs: %s\n', ME.message);
+    fprintf(runfid, 'Error collecting phase3 logs: %s\n', ME.message);
 end
 
 % Collect Phase4 logs
@@ -106,11 +106,11 @@ try
             src = fullfile(p4dir, files4(k).name);
             dest = fullfile(outRoot, files4(k).name);
             copyfile(src, dest);
-            fprintf(fid, 'Copied %s to %s\n', src, dest);
+            fprintf(runfid, 'Copied %s to %s\n', src, dest);
         end
     end
 catch ME
-    fprintf(fid, 'Error collecting phase4 logs: %s\n', ME.message);
+    fprintf(runfid, 'Error collecting phase4 logs: %s\n', ME.message);
 end
 % Collect Phase4 state history files if present
 try
@@ -120,15 +120,15 @@ try
             src = fullfile(p4dir, files_s(k).name);
             dest = fullfile(outRoot, files_s(k).name);
             copyfile(src, dest);
-            fprintf(fid, 'Copied %s to %s\n', src, dest);
+            fprintf(runfid, 'Copied %s to %s\n', src, dest);
         end
     end
 catch ME
-    fprintf(fid, 'Error collecting phase4 state files: %s\n', ME.message);
+    fprintf(runfid, 'Error collecting phase4 state files: %s\n', ME.message);
 end
 
 if closeLog
-    fclose(fid);
+    fclose(runfid);
 end
 fprintf('Run complete. See %s for details.\n', logfile);
 
