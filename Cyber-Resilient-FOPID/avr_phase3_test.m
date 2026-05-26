@@ -57,7 +57,7 @@ if exist(best_cfg_path,'file')
     detector_cfg = struct('baseline_window',5,'window_size',100,'threshold_factor',best_cfg.threshold_factor,'Q',best_cfg.Q_scale*1e-6,'R',best_cfg.R_scale*1e-4);
     switcher_cfg = struct('hysteresis_time', best_cfg.hysteresis_time, 'recovery_time', best_cfg.recovery_time);
 else
-    detector_cfg = struct('baseline_window',5,'window_size',100,'threshold_factor',2,'Q',1e-6,'R',1e-4);
+    detector_cfg = struct('baseline_window',6,'window_size',200,'threshold_factor',5,'Q',1e-6,'R',1e-4,'min_consecutive',7,'startup_suppress',6);
     switcher_cfg = struct('hysteresis_time',2,'recovery_time',0.5);
 end
 
@@ -87,8 +87,7 @@ for i = 1:length(attack_types)
     % Instead, approximate resulting output y_switched by combining controller output and plant input via lsim
     % Compute closed-loop response under switching approximately by simulating plant with u_switched as input
     try
-        sys_u = G_fwd / (1 + G_sen * G_fwd * 0); % approximate forward map from control to output
-        y_switched = lsim(G_fwd, u_switched, t); % approximate
+        y_switched = lsim(G_fwd, u_switched, t); % approximate plant response to switched control
     catch
         y_switched = y_true; % fallback
     end

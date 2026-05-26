@@ -140,7 +140,7 @@ if exist(csvpath,'file')
     try
         hf = figure('Visible','off');
         bar([T.ITAE_2DoF, T.ITAE_PID, T.ITAE_Res]);
-        set(gca,'XTickLabel', T.scenario);
+        set(gca,'XTickLabel', cellstr(string(T.scenario)));
         legend('2DoF','PID','Resilient'); title('Phase5 ITAE Comparison'); ylabel('ITAE');
         saveas(hf,outfig); close(hf);
         fprintf('Saved Phase5 ITAE plot to %s\n', outfig);

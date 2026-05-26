@@ -10,6 +10,12 @@ outdir = fullfile('results','phase5'); if ~exist(outdir,'dir'), mkdir(outdir); e
 run_ts = datestr(now,'yyyymmdd_HHMMSS');
 logpath = fullfile(outdir, ['phase5_run_' run_ts '.log']);
 lf = fopen(logpath,'w');
+closeLog = lf > 2;
+if lf < 0
+    warning('Could not open %s for writing; logging to console only.', logpath);
+    lf = 1;
+    closeLog = false;
+end
 fprintf(lf, 'Phase5 run log - %s\n', datestr(now));
 fprintf('Phase5 log: %s\n', logpath);
 
@@ -53,17 +59,21 @@ end
 % Time base and reference
 Tfinal = 25; dt = 0.01; t = (0:dt:Tfinal)'; r = ones(size(t));
 
-% Baseline 2DoF closed-loop response (simulate closed-loop by connecting plant and controllers per-step)
+% Baseline 2DoF/PID closed-loop responses using the same transfer-function form
+% already used elsewhere in the repository. This is more stable than the
+% explicit Euler approximation for the fractional controller paths.
 try
-    y_2dof = simulate_closedloop_2dof_euler(ss(G_fwd), C_2dof_r, C_2dof_y, t, r);
+    G_cl_2dof = minreal((G_fwd * C_2dof_r) / (1 + G_fwd * C_2dof_y * G_sen), 1e-6);
+    y_2dof = lsim(G_cl_2dof, r, t);
 catch ME
     warning('Failed simulating 2DoF closed-loop; returning zeros: %s', ME.message);
     y_2dof = zeros(size(t));
 end
 
-% PID closed-loop (simulate classical feedback controller per-step)
+% PID closed-loop
 try
-    y_pid = simulate_closedloop_pid_euler(ss(G_fwd), C_pid, t, r);
+    G_cl_pid = minreal((G_fwd * C_pid) / (1 + G_fwd * C_pid * G_sen), 1e-6);
+    y_pid = lsim(G_cl_pid, r, t);
 catch ME
     warning('Failed simulating PID closed-loop; returning zeros: %s', ME.message);
     y_pid = zeros(size(t));
@@ -159,6 +169,9 @@ end
 % Write CSV
 csvpath = fullfile(outdir, 'phase5_comparison.csv');
 csvfid = fopen(csvpath,'w');
+if csvfid < 0
+    error('Could not open %s for writing.', csvpath);
+end
 fprintf(csvfid, 'scenario,attack_type,mag,slope,detected,det_time,det_delay,conf,ITAE_2DoF,ITAE_PID,ITAE_Res,mode_transitions,final_mode\n');
 for k = 1:length(rows)
     r = rows{k};
@@ -170,7 +183,9 @@ fclose(csvfid);
 save(fullfile(outdir,'phase5_summary.mat'), 'rows');
 fprintf('Phase 5 full comparison complete. Results in %s\n', outdir);
 fprintf(lf, '\nPhase5 summary saved.\n');
-fclose(lf);
+if closeLog
+    fclose(lf);
+end
 
 function v = NaN2num(x)
     if isempty(x) || isnan(x), v = NaN; else v = x; end
@@ -202,7 +217,8 @@ function y = simulate_plant_euler(plant_ss, u_seq, t)
     y = zeros(N,1);
     for k = 1:N
         if k == 1, dt = t(1); else dt = t(k)-t(k-1); end
-        u = u_seq(min(k,end));
+        uk = min(k, numel(u_seq));
+        u = u_seq(uk);
         x = x + (A * x + B * u) * dt;
         y(k) = C * x + D * u;
     end
@@ -229,7 +245,8 @@ function y = simulate_closedloop_2dof_euler(plant_ss, C_r, C_y, t, r)
         % controller outputs
         ur = Cr * xr + Dr * r(k);
         uy = Cy * xy + Dy * ym;
-        u = ur + uy;
+        % 2DoF law from fopid_2dof.m is U(s) = C_r(s)R(s) - C_y(s)Y(s)
+        u = ur - uy;
         % update controller states
         xr = xr + (Ar * xr + Br * r(k)) * dt;
         xy = xy + (Ay * xy + By * ym) * dt;

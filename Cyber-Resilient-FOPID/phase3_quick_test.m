@@ -9,7 +9,14 @@ try
     outdir = fullfile('results','phase3'); if ~exist(outdir,'dir'), mkdir(outdir); end
     run_ts = datestr(now,'yyyymmdd_HHMMSS');
     logpath = fullfile(outdir, ['phase3_quick_run_' run_ts '.log']);
-    lf = fopen(logpath,'w'); fprintf(lf,'Phase3 quick run log - %s\n', datestr(now));
+    lf = fopen(logpath,'w');
+    closeLog = lf > 2;
+    if lf < 0
+        warning('Could not open %s for writing; logging to console only.', logpath);
+        lf = 1;
+        closeLog = false;
+    end
+    fprintf(lf,'Phase3 quick run log - %s\n', datestr(now));
     fprintf('Phase3 quick log: %s\n', logpath);
 
     % Load parameters and build plant
@@ -51,9 +58,11 @@ try
 
     % Detector config (defaults are OK)
     detector_config = struct();
-    detector_config.baseline_window = 3;   % seconds
-    detector_config.window_size = 50;      % samples
-    detector_config.threshold_factor = 3;  % more conservative
+    detector_config.baseline_window = 6;   % seconds
+    detector_config.window_size = 200;     % samples
+    detector_config.threshold_factor = 5;  % more conservative
+    detector_config.min_consecutive = 7;
+    detector_config.startup_suppress = 6;
 
     % Run detector
     try
@@ -118,4 +127,4 @@ catch ME
     fprintf('Error during quick test: %s\n', ME.message);
     rethrow(ME);
 end
-if exist('lf','var'), fprintf(lf,'Run complete\n'); fclose(lf); end
+if exist('lf','var') && closeLog, fprintf(lf,'Run complete\n'); fclose(lf); end
