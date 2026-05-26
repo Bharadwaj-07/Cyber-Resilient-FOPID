@@ -147,7 +147,9 @@ for i = 1:length(scenarios)
 
     % Collect table row
     row = struct();
-    row.scenario = sc.name; row.attack_type = sc.type; row.attack_mag = getfield(sc,'magnitude',NaN); row.attack_slope = getfield(sc,'slope',NaN);
+    row.scenario = sc.name; row.attack_type = sc.type;
+    if isfield(sc,'magnitude'), row.attack_mag = sc.magnitude; else row.attack_mag = NaN; end
+    if isfield(sc,'slope'), row.attack_slope = sc.slope; else row.attack_slope = NaN; end
     row.detected = double(attack_flag); row.detection_time = detection_time; row.detection_delay = detection_delay; row.confidence = confidence;
     row.ITAE_2dof = metrics.ITAE_2dof; row.ITAE_pid = metrics.ITAE_pid; row.ITAE_res = metrics.ITAE_res;
     row.mode_transitions = size(switch_times,1); row.final_mode = mode_hist(end);
