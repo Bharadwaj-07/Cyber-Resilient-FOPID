@@ -1,0 +1,136 @@
+%% avr_closedloop_2dof.m
+% Runs PSO tuning and builds the optimised 2DoF FOPID closed-loop
+% Requires: avr_parameters.m, fopid_operator.m, fopid_2dof.m, pso_tuner.m
+
+avr_parameters;
+
+% --- Reproducibility ---
+rng(1, 'twister');
+
+% --- Rebuild plant blocks ---
+G_amp = tf(Ka, [Ta 1]);
+G_exc = tf(Ke, [Te 1]);
+G_gen = tf(Kg, [Tg 1]);
+G_sen = tf(Ks, [Ts 1]);
+G_fwd = G_amp * G_exc * G_gen;
+
+% --- PSO options (reduce for quick test, increase for final run) ---
+opts.n_particles = 30;
+opts.max_iter    = 100;   % use 200 for final tuning
+opts.Tfinal      = max(Tfinal, 25);
+% Fractional operator settings (reduced order for stability)
+opts.frac.wb = 1e-3;
+opts.frac.wh = 1e3;
+opts.frac.N  = 5;
+
+% PID baseline to center bounds
+C_pid0 = pidtune(G_fwd * G_sen, 'PID');
+Kp0 = max(C_pid0.Kp, 0.2);
+Ki0 = max(C_pid0.Ki, 0.2);
+Kd0 = max(C_pid0.Kd, 0.05);
+
+% Bounds centered around PID baseline and tight fractional orders
+opts.bounds.lb   = [ ...
+    0.1*Kp0 ...
+    0.1*Ki0 ...
+    0.01*Kd0 ...
+    0.6 ...
+    0.6 ...
+    0.1 ...
+    0.1 ];
+
+opts.bounds.ub   = [ ...
+    1.5*Kp0 ...
+    1.5*Ki0 ...
+    0.8*Kd0 ...
+    1.2 ...
+    1.2 ...
+    1.0 ...
+    1.0 ];
+
+% Seed PSO with PID-equivalent FOPID (lambda=mu=1, b=c=0.8)
+opts.seed = [Kp0, Ki0, Kd0, 1.0, 1.0, 0.8, 0.8];
+% Evaluation targets: encourage settling within 6s and rise within 2s
+opts.eval.settle_threshold = 0.02;
+opts.eval.max_settle       = 5;
+opts.eval.max_rise         = 1.5;
+opts.eval.settle_weight    = 50;
+opts.eval.rise_weight      = 20;
+opts.eval.ss_weight        = 200;
+opts.eval.target_os        = 6;
+opts.eval.os_weight        = 8;
+
+opts.w  = 0.72;
+opts.c1 = 1.49;
+opts.c2 = 1.49;
+
+% --- Run tuner ---
+tic;
+[best_params, best_ITAE, pso_history] = pso_tuner(G_fwd, G_sen, opts);
+elapsed = toc;
+fprintf('2DoF tuning time: %.1f s\n', elapsed);
+
+% --- Unpack results ---
+Kp  = best_params(1);  Ki  = best_params(2);  Kd  = best_params(3);
+lam = best_params(4);  mu  = best_params(5);
+b   = best_params(6);  c   = best_params(7);
+
+% --- Build optimised controller ---
+[C_r, C_y] = fopid_2dof(Kp, Ki, Kd, lam, mu, b, c, ...
+    opts.frac.wb, opts.frac.wh, opts.frac.N);
+
+% --- Closed-loop transfer function ---
+G_cl_2dof = minreal((G_fwd * C_r) / (1 + G_fwd * C_y * G_sen), 1e-3);
+
+% --- Step response metrics ---
+t = 0 : 0.001 : opts.Tfinal;
+[y_2dof, t_2dof] = step(G_cl_2dof, t);
+info_2dof = stepinfo(y_2dof, t_2dof, 'SettlingTimeThreshold', opts.eval.settle_threshold);
+
+fprintf('\n=== 2DoF FOPID step response metrics ===\n');
+fprintf('Rise time:     %.4f s\n', info_2dof.RiseTime);
+fprintf('Settling time: %.4f s\n', info_2dof.SettlingTime);
+fprintf('Overshoot:     %.2f %%\n', info_2dof.Overshoot);
+fprintf('ITAE:          %.5f\n', best_ITAE);
+
+% --- 1DoF tuning (b=c=1) for fair comparison ---
+opts_1dof = opts;
+opts_1dof.fixed_bc = true;
+opts_1dof.eval.target_os = 12;
+opts_1dof.bounds.lb = [0.1*Kp0, 0.1*Ki0, 0.01*Kd0, 0.6, 0.6];
+opts_1dof.bounds.ub = [1.5*Kp0, 1.5*Ki0, 0.8*Kd0, 1.2, 1.2];
+opts_1dof.seed = [Kp0, Ki0, Kd0, 1.0, 1.0];
+tic;
+[best_params_1dof, best_ITAE_1dof, pso_history_1dof] = pso_tuner(G_fwd, G_sen, opts_1dof);
+elapsed_1dof = toc;
+fprintf('1DoF tuning time: %.1f s\n', elapsed_1dof);
+
+Kp1  = best_params_1dof(1);  Ki1  = best_params_1dof(2);  Kd1  = best_params_1dof(3);
+lam1 = best_params_1dof(4);  mu1  = best_params_1dof(5);
+
+[C_r_1dof, C_y_1dof] = fopid_2dof(Kp1, Ki1, Kd1, lam1, mu1, 1.0, 1.0, ...
+    opts.frac.wb, opts.frac.wh, opts.frac.N);
+G_cl_1dof = minreal((G_fwd * C_r_1dof) / (1 + G_fwd * C_y_1dof * G_sen), 1e-3);
+[y_1dof, t_1dof] = step(G_cl_1dof, t);
+info_1dof = stepinfo(y_1dof, t_1dof, 'SettlingTimeThreshold', opts.eval.settle_threshold);
+
+fprintf('\n=== 1DoF FOPID step response metrics ===\n');
+fprintf('Rise time:     %.4f s\n', info_1dof.RiseTime);
+fprintf('Settling time: %.4f s\n', info_1dof.SettlingTime);
+fprintf('Overshoot:     %.2f %%\n', info_1dof.Overshoot);
+fprintf('ITAE:          %.5f\n', best_ITAE_1dof);
+
+% --- PSO convergence plot ---
+figure('Name','PSO Convergence');
+semilogy(pso_history, 'LineWidth', 1.5);
+grid on;
+xlabel('Iteration'); ylabel('Best ITAE (log scale)');
+title('PSO convergence — 2DoF FOPID tuning');
+
+% --- Save ---
+save('avr_phase2.mat', 'best_params', 'best_ITAE', ...
+    'C_r', 'C_y', 'G_cl_2dof', 'pso_history', 'info_2dof', ...
+    'best_params_1dof', 'best_ITAE_1dof', 'pso_history_1dof', ...
+    'C_r_1dof', 'C_y_1dof', 'G_cl_1dof', 'info_1dof', ...
+    'C_pid0', 'Kp0', 'Ki0', 'Kd0', 'opts');
+disp('Phase 2 results saved to avr_phase2.mat');
