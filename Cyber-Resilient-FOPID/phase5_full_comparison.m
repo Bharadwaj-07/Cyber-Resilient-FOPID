@@ -62,6 +62,19 @@ if ~exist('C_2dof_y','var') || isempty(C_2dof_y)
     end
 end
 
+% 1DoF FOPID for roadmap-aligned validation matrix
+if exist('best_params_1dof','var') && ~isempty(best_params_1dof)
+    bp1 = best_params_1dof;
+    Kp1 = bp1(1); Ki1 = bp1(2); Kd1 = bp1(3); lam1 = bp1(4); mu1 = bp1(5);
+elseif exist('best_params','var')
+    bp1 = best_params;
+    Kp1 = bp1(1); Ki1 = bp1(2); Kd1 = bp1(3); lam1 = bp1(4); mu1 = bp1(5);
+else
+    Kp1 = 1; Ki1 = 1; Kd1 = 0.1; lam1 = 1; mu1 = 1;
+end
+frac1 = struct('wb', 1e-2, 'wh', 1e2, 'N', 3);
+[C_r_1dof, C_y_1dof] = fopid_2dof(Kp1, Ki1, Kd1, lam1, mu1, 1.0, 1.0, frac1.wb, frac1.wh, frac1.N);
+
 % Classical PID (for comparison)
 try
     C_pid = pidtune(G_fwd * G_sen, 'PID');
@@ -72,25 +85,34 @@ end
 % Time base and reference
 Tfinal = 25; dt = 0.01; t = (0:dt:Tfinal)'; r = ones(size(t));
 
-% Baseline 2DoF/PID closed-loop responses using the same transfer-function form
-% already used elsewhere in the repository. This is more stable than the
-% explicit Euler approximation for the fractional controller paths.
+% Baseline 2DoF/PID closed-loop responses using stable state-space Euler
+% integration. This avoids the runaway values that can appear from fragile
+% transfer-function closed-loop constructions.
 try
-    G_cl_2dof = minreal((G_fwd * C_2dof_r) / (1 + G_fwd * C_2dof_y * G_sen), 1e-6);
-    y_2dof = lsim(G_cl_2dof, r, t);
+    y_2dof = simulate_closedloop_2dof_euler(ss(G_fwd), C_2dof_r, C_2dof_y, t, r);
 catch ME
-    warning('Failed simulating 2DoF closed-loop; returning zeros: %s', ME.message);
+    warning('Failed simulating 2DoF closed-loop with Euler model; returning zeros: %s', ME.message);
     y_2dof = zeros(size(t));
 end
 
-% PID closed-loop
 try
-    G_cl_pid = minreal((G_fwd * C_pid) / (1 + G_fwd * C_pid * G_sen), 1e-6);
-    y_pid = lsim(G_cl_pid, r, t);
+    y_1dof = simulate_closedloop_2dof_euler(ss(G_fwd), C_r_1dof, C_y_1dof, t, r);
 catch ME
-    warning('Failed simulating PID closed-loop; returning zeros: %s', ME.message);
+    warning('Failed simulating 1DoF closed-loop with Euler model; returning zeros: %s', ME.message);
+    y_1dof = zeros(size(t));
+end
+
+try
+    y_pid = simulate_closedloop_pid_euler(ss(G_fwd), C_pid, t, r);
+catch ME
+    warning('Failed simulating PID closed-loop with Euler model; returning zeros: %s', ME.message);
     y_pid = zeros(size(t));
 end
+
+% Keep the nominal traces finite so downstream metrics stay meaningful.
+y_1dof(~isfinite(y_1dof)) = 0;
+y_2dof(~isfinite(y_2dof)) = 0;
+y_pid(~isfinite(y_pid)) = 0;
 
 % Attack scenarios (Phase 5 matrix requires at least bias, ramp, sine)
 scenarios = {};
@@ -163,8 +185,10 @@ for i = 1:length(scenarios)
     % Compute metrics
     itae = @(y) trapz(t, t .* abs(1 - y));
     metrics.ITAE_2dof = itae(y_2dof);
+    metrics.ITAE_1dof = itae(y_1dof);
     metrics.ITAE_pid = itae(y_pid);
     metrics.ITAE_res = itae(y_res);
+    metrics.delta_ITAE_res_1dof = metrics.ITAE_res - metrics.ITAE_1dof;
     metrics.delta_ITAE_res_pid = metrics.ITAE_res - metrics.ITAE_pid;
     metrics.delta_ITAE_res_2dof = metrics.ITAE_res - metrics.ITAE_2dof;
 
@@ -179,7 +203,7 @@ for i = 1:length(scenarios)
 
     % plot
     hf = figure('Visible','off');
-    subplot(3,1,1); plot(t, y_2dof, 'b', t, y_pid, 'g', t, y_res, 'r'); legend('2DoF','PID','Resilient'); title(['Outputs - ' sc.name]); grid on;
+    subplot(3,1,1); plot(t, y_1dof, 'c', t, y_2dof, 'b', t, y_pid, 'g', t, y_res, 'r'); legend('1DoF','2DoF','PID','Resilient'); title(['Outputs - ' sc.name]); grid on;
     subplot(3,1,2); plot(t, residuals); title('Residuals'); grid on; if ~isnan(detection_time), xline(detection_time,'r--'); end
     subplot(3,1,3); stairs(t, mode_hist); title('Mode history (resilient)'); ylim([0.5 3.5]); grid on;
     saveas(hf, fullfile(outdir, [sc.name '.png'])); close(hf);
@@ -198,13 +222,17 @@ for i = 1:length(scenarios)
     row.residual_rms = residual_rms;
     row.residual_peak_to_sigma = residual_peak_to_sigma;
     row.detector_threshold = threshold;
-    row.ITAE_2dof = metrics.ITAE_2dof; row.ITAE_pid = metrics.ITAE_pid; row.ITAE_res = metrics.ITAE_res;
+    row.ITAE_1dof = metrics.ITAE_1dof; row.ITAE_2dof = metrics.ITAE_2dof; row.ITAE_pid = metrics.ITAE_pid; row.ITAE_res = metrics.ITAE_res;
+    row.delta_ITAE_res_1dof = metrics.delta_ITAE_res_1dof;
     row.delta_ITAE_res_pid = metrics.delta_ITAE_res_pid;
     row.delta_ITAE_res_2dof = metrics.delta_ITAE_res_2dof;
-    row.y2dof_final = y_2dof(end); row.y_pid_final = y_pid(end); row.y_res_final = y_res(end);
+    row.y1dof_final = y_1dof(end); row.y2dof_final = y_2dof(end); row.y_pid_final = y_pid(end); row.y_res_final = y_res(end);
+    row.y1dof_peak = max(y_1dof);
     row.y2dof_peak = max(y_2dof); row.y_pid_peak = max(y_pid); row.y_res_peak = max(y_res);
-    row.y2dof_overshoot = info2.Overshoot; row.y_pid_overshoot = infoP.Overshoot; row.y_res_overshoot = infoR.Overshoot;
+    info1 = stepinfo(y_1dof, t);
+    row.y1dof_overshoot = info1.Overshoot; row.y2dof_overshoot = info2.Overshoot; row.y_pid_overshoot = infoP.Overshoot; row.y_res_overshoot = infoR.Overshoot;
     row.y2dof_settling = info2.SettlingTime; row.y_pid_settling = infoP.SettlingTime; row.y_res_settling = infoR.SettlingTime;
+    row.y1dof_settling = info1.SettlingTime;
     row.mode_transitions = size(switch_times,1); row.final_mode = mode_hist(end);
     if ~isempty(switch_times)
         row.first_switch_time = switch_times(1,1);
@@ -226,10 +254,10 @@ summaryTable = summaryTable(:, [ ...
     {'scenario','attack_type','attack_mag','attack_slope','attack_frequency','attack_start_time', ...
      'detected','detection_time','detection_delay','confidence', ...
      'residual_baseline_sigma','residual_abs_max','residual_abs_mean','residual_rms','residual_peak_to_sigma','detector_threshold', ...
-     'ITAE_2dof','ITAE_pid','ITAE_res','delta_ITAE_res_pid','delta_ITAE_res_2dof', ...
-     'y2dof_final','y_pid_final','y_res_final','y2dof_peak','y_pid_peak','y_res_peak', ...
-     'y2dof_overshoot','y_pid_overshoot','y_res_overshoot', ...
-     'y2dof_settling','y_pid_settling','y_res_settling', ...
+     'ITAE_1dof','ITAE_2dof','ITAE_pid','ITAE_res','delta_ITAE_res_1dof','delta_ITAE_res_pid','delta_ITAE_res_2dof', ...
+     'y1dof_final','y2dof_final','y_pid_final','y_res_final','y1dof_peak','y2dof_peak','y_pid_peak','y_res_peak', ...
+     'y1dof_overshoot','y2dof_overshoot','y_pid_overshoot','y_res_overshoot', ...
+     'y1dof_settling','y2dof_settling','y_pid_settling','y_res_settling', ...
      'mode_transitions','final_mode','first_switch_time','last_switch_time'}]);
 writetable(summaryTable, csvpath);
 
@@ -239,7 +267,7 @@ anomalyTable = summaryTable(:, [ ...
     {'scenario','attack_type','attack_mag','attack_slope','attack_frequency','attack_start_time', ...
      'detected','detection_time','detection_delay','confidence', ...
      'residual_baseline_sigma','residual_abs_max','residual_abs_mean','residual_rms','residual_peak_to_sigma','detector_threshold', ...
-     'ITAE_2dof','ITAE_pid','ITAE_res','delta_ITAE_res_pid','delta_ITAE_res_2dof', ...
+    'ITAE_1dof','ITAE_2dof','ITAE_pid','ITAE_res','delta_ITAE_res_1dof','delta_ITAE_res_pid','delta_ITAE_res_2dof', ...
      'mode_transitions','final_mode','first_switch_time','last_switch_time'}]);
 writetable(anomalyTable, anomalyCsvPath);
 fprintf(lf, 'Saved CSV summaries: %s and %s\n', csvpath, anomalyCsvPath);
