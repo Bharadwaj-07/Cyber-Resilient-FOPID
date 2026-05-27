@@ -28,6 +28,7 @@ if ~isfield(switcher_config,'initial_mode'), switcher_config.initial_mode = 1; e
 if ~isfield(switcher_config,'detector_attack_flag'), switcher_config.detector_attack_flag = false; end
 if ~isfield(switcher_config,'detector_attack_time'), switcher_config.detector_attack_time = NaN; end
 if ~isfield(switcher_config,'persist_state_history'), switcher_config.persist_state_history = false; end
+if ~isfield(switcher_config,'heuristic_switching_enabled'), switcher_config.heuristic_switching_enabled = true; end
 
 t = t(:); y_meas = y_meas(:); r_ref = r_ref(:);
 N = length(t);
@@ -114,7 +115,7 @@ for k = 1:N
             lock_to_pid = true;
             detector_switch_done = true;
         end
-    elseif mode == 1 && ~lock_to_pid
+    elseif mode == 1 && ~lock_to_pid && switcher_config.heuristic_switching_enabled
         if metric(k) > metric_thresh
             from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
         end
@@ -317,6 +318,10 @@ for k = 1:N
         if ~isempty(xr), xr_hist(k,1:nr) = xr'; end
         if ~isempty(x2), x2_hist(k,1:n2) = x2'; end
     end
+end
+
+if ~isempty(switch_times)
+    switch_times = unique(switch_times, 'rows', 'stable');
 end
 
 % After simulation, log switch times if logfile open

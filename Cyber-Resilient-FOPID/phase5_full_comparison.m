@@ -96,6 +96,7 @@ scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency
 % Detector & switcher defaults (tightened to suppress startup false positives)
 detector_cfg = struct('baseline_window',5,'window_size',100,'threshold_factor',5,'Q',1e-6,'R',1e-4,'min_consecutive',7,'startup_suppress',5);
 switcher_cfg = struct('hysteresis_time',2,'recovery_time',0.5,'initial_mode',1);
+    switcher_cfg.heuristic_switching_enabled = false;
 
 % Prepare results table
 rows = {};

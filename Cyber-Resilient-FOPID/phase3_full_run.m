@@ -146,6 +146,7 @@ try
 
         % Switcher run (simulate controller outputs and modes)
         try
+            switcher_config.heuristic_switching_enabled = false;
             switcher_config.detector_attack_flag = attack_flag;
             switcher_config.detector_attack_time = detection_time;
             [u, mode_history, switch_times] = avr_switcher(y_meas, t, r_ref, C_2dof_r, C_2dof_y, C_pid, switcher_config);
