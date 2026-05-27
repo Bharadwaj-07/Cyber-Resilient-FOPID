@@ -84,6 +84,8 @@ end
 
 % Time base and reference
 Tfinal = 25; dt = 0.01; t = (0:dt:Tfinal)'; r = ones(size(t));
+signal_cap = 5;            % expected AVR output is around 1 pu; cap protects metrics from unstable traces
+residual_sigma_floor = 1e-3; % avoids inflated peak/sigma when baseline residual is nearly zero
 
 % Baseline 2DoF/PID closed-loop responses using stable state-space Euler
 % integration. This avoids the runaway values that can appear from fragile
@@ -109,10 +111,10 @@ catch ME
     y_pid = zeros(size(t));
 end
 
-% Keep the nominal traces finite so downstream metrics stay meaningful.
-y_1dof(~isfinite(y_1dof)) = 0;
-y_2dof(~isfinite(y_2dof)) = 0;
-y_pid(~isfinite(y_pid)) = 0;
+% Sanitize nominal traces so unstable-but-finite blowups do not poison metrics.
+y_1dof = sanitize_signal(y_1dof, signal_cap);
+y_2dof = sanitize_signal(y_2dof, signal_cap);
+y_pid = sanitize_signal(y_pid, signal_cap);
 
 % Attack scenarios (Phase 5 matrix requires at least bias, ramp, sine)
 scenarios = {};
@@ -162,7 +164,9 @@ for i = 1:length(scenarios)
     end
     residual_baseline_sigma = std(residuals(1:idx_baseline_end));
     if ~isfinite(residual_baseline_sigma) || residual_baseline_sigma <= 0
-        residual_baseline_sigma = 1e-6;
+        residual_baseline_sigma = residual_sigma_floor;
+    else
+        residual_baseline_sigma = max(residual_baseline_sigma, residual_sigma_floor);
     end
     residual_abs_max = max(abs(residuals));
     residual_abs_mean = mean(abs(residuals));
@@ -185,20 +189,20 @@ for i = 1:length(scenarios)
         fprintf(lf, 'Resilient sim ERROR: %s\n', ME.message);
         u_res = zeros(size(t)); mode_hist = zeros(size(t)); switch_times = []; y_res = y_2dof;
     end
+    y_res = sanitize_signal(y_res, signal_cap);
 
     % Compute metrics
-    itae = @(y) trapz(t, t .* abs(1 - y));
-    metrics.ITAE_2dof = itae(y_2dof);
-    metrics.ITAE_1dof = itae(y_1dof);
-    metrics.ITAE_pid = itae(y_pid);
-    metrics.ITAE_res = itae(y_res);
+    metrics.ITAE_2dof = safe_itae(y_2dof, t, signal_cap);
+    metrics.ITAE_1dof = safe_itae(y_1dof, t, signal_cap);
+    metrics.ITAE_pid = safe_itae(y_pid, t, signal_cap);
+    metrics.ITAE_res = safe_itae(y_res, t, signal_cap);
     metrics.delta_ITAE_res_1dof = metrics.ITAE_res - metrics.ITAE_1dof;
     metrics.delta_ITAE_res_pid = metrics.ITAE_res - metrics.ITAE_pid;
     metrics.delta_ITAE_res_2dof = metrics.ITAE_res - metrics.ITAE_2dof;
 
-    info2 = stepinfo(y_2dof, t);
-    infoP = stepinfo(y_pid, t);
-    infoR = stepinfo(y_res, t);
+    info2 = safe_stepinfo(y_2dof, t);
+    infoP = safe_stepinfo(y_pid, t);
+    infoR = safe_stepinfo(y_res, t);
 
     % Save per-scenario MAT and plot
     fname = fullfile(outdir, [sc.name '.mat']);
@@ -230,10 +234,10 @@ for i = 1:length(scenarios)
     row.delta_ITAE_res_1dof = metrics.delta_ITAE_res_1dof;
     row.delta_ITAE_res_pid = metrics.delta_ITAE_res_pid;
     row.delta_ITAE_res_2dof = metrics.delta_ITAE_res_2dof;
-    row.y1dof_final = y_1dof(end); row.y2dof_final = y_2dof(end); row.y_pid_final = y_pid(end); row.y_res_final = y_res(end);
-    row.y1dof_peak = max(y_1dof);
-    row.y2dof_peak = max(y_2dof); row.y_pid_peak = max(y_pid); row.y_res_peak = max(y_res);
-    info1 = stepinfo(y_1dof, t);
+    row.y1dof_final = safe_scalar(y_1dof(end), signal_cap); row.y2dof_final = safe_scalar(y_2dof(end), signal_cap); row.y_pid_final = safe_scalar(y_pid(end), signal_cap); row.y_res_final = safe_scalar(y_res(end), signal_cap);
+    row.y1dof_peak = safe_scalar(max(y_1dof), signal_cap);
+    row.y2dof_peak = safe_scalar(max(y_2dof), signal_cap); row.y_pid_peak = safe_scalar(max(y_pid), signal_cap); row.y_res_peak = safe_scalar(max(y_res), signal_cap);
+    info1 = safe_stepinfo(y_1dof, t);
     row.y1dof_overshoot = info1.Overshoot; row.y2dof_overshoot = info2.Overshoot; row.y_pid_overshoot = infoP.Overshoot; row.y_res_overshoot = infoR.Overshoot;
     row.y2dof_settling = info2.SettlingTime; row.y_pid_settling = infoP.SettlingTime; row.y_res_settling = infoR.SettlingTime;
     row.y1dof_settling = info1.SettlingTime;
@@ -305,6 +309,64 @@ end
 
 function v = NaN2num(x)
     if isempty(x) || isnan(x), v = NaN; else v = x; end
+end
+
+function y = sanitize_signal(y, cap)
+    % Clamp outliers and replace non-finite samples with previous valid value.
+    y = y(:);
+    y(~isfinite(y)) = NaN;
+    if all(isnan(y))
+        y = zeros(size(y));
+        return;
+    end
+
+    firstValid = find(~isnan(y), 1, 'first');
+    if firstValid > 1
+        y(1:firstValid-1) = y(firstValid);
+    end
+
+    for k = 2:numel(y)
+        if isnan(y(k))
+            y(k) = y(k-1);
+        end
+    end
+
+    y = max(min(y, cap), -cap);
+end
+
+function info = safe_stepinfo(y, t)
+    % Return finite step metrics when possible, otherwise NaN placeholders.
+    info = struct('Overshoot', NaN, 'SettlingTime', NaN);
+    try
+        raw = stepinfo(y, t);
+        if isfield(raw, 'Overshoot') && isfinite(raw.Overshoot)
+            info.Overshoot = raw.Overshoot;
+        end
+        if isfield(raw, 'SettlingTime') && isfinite(raw.SettlingTime)
+            info.SettlingTime = raw.SettlingTime;
+        end
+    catch
+        % Keep NaN placeholders for invalid traces.
+    end
+end
+
+function val = safe_itae(y, t, cap)
+    % Bounded ITAE to avoid exploding values from unstable trajectories.
+    e = abs(1 - y(:));
+    e(~isfinite(e)) = cap;
+    e = min(e, cap);
+    val = trapz(t(:), t(:) .* e);
+    if ~isfinite(val)
+        val = NaN;
+    end
+end
+
+function v = safe_scalar(x, cap)
+    if ~isfinite(x)
+        v = NaN;
+        return;
+    end
+    v = max(min(x, cap), -cap);
 end
 
 function y = simulate_ss_euler(sys, input, t)
