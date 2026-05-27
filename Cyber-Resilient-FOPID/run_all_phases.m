@@ -83,13 +83,15 @@ if exist(csvpath,'file')
     outfig = fullfile(outRoot,'phase5_ITAE.png');
     try
         hf = figure('Visible','off');
-        bar([T.ITAE_2DoF, T.ITAE_PID, T.ITAE_Res]);
+        bar([T.ITAE_2dof, T.ITAE_pid, T.ITAE_res]);
         set(gca,'XTickLabel', cellstr(string(T.scenario)));
-        legend('2DoF','PID','Resilient'); title('Phase5 ITAE Comparison'); ylabel('ITAE');
-        saveas(hf,outfig); close(hf);
+        legend('2DoF','PID','Resilient','Location','northwest');
+        title('Phase5 ITAE Comparison'); ylabel('ITAE'); grid on;
+        exportgraphics(hf, outfig, 'Resolution', 150);
+        close(hf);
         fprintf('Saved Phase5 ITAE plot to %s\n', outfig);
-    catch
-        warning('Could not create phase5 ITAE plot');
+    catch ME
+        warning('Could not create phase5 ITAE plot: %s', ME.message);
     end
 end
 
