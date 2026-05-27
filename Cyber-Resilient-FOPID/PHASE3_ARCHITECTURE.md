@@ -108,13 +108,15 @@ end
 
 ## 3. Detection Logic
 
-### 3.1 Kalman Filter Residual Detector
+### 3.1 Nominal Baseline Residual Detector
 
-**Principle**: In the absence of attack, a well-tuned Kalman filter predicts the measurement accurately. When attack injects bias, the residual (innovation) $e(t) = y_{\text{meas}}(t) - \hat{y}(t)$ will show anomalous statistics (elevated mean, variance, or autocorrelation).
+**Principle**: In the absence of attack, the nominal closed-loop baseline response should match the measured output. When attack injects bias, the residual
+\[e(t) = y_{\text{meas}}(t) - y_{\text{nominal}}(t)\]
+will show anomalous statistics (elevated mean, variance, or autocorrelation) without the residual being adapted away by an online observer.
 
 ### 3.2 Kalman Filter Design
 
-**Plant for estimation**: Use the **nominal closed-loop reference-to-output model** that generated the baseline response. This keeps the observer aligned with the signal being measured and avoids early false positives from open-loop mismatch.
+**Plant for estimation**: Use the **nominal closed-loop reference-to-output model** that generated the baseline response. The detector runs the same nominal model offline to generate $y_{\text{nominal}}(t)$ and compares it directly to the attacked measurement.
 
 Plant model:
 $$\dot{x} = A_p x + B_p r$$
@@ -125,16 +127,15 @@ where:
 - $r$: Reference input (step setpoint)
 - $y$: Measured terminal voltage
 
-**Kalman Filter**:
-$$\hat{x}_{k|k-1} = A_p \hat{x}_{k-1} + B_p r_k$$
-$$\hat{y}_{k|k-1} = C_p \hat{x}_{k|k-1}$$
-$$\text{Residual: } e_k = y_{\text{meas},k} - \hat{y}_{k|k-1}$$
+**Residual model**:
+$$y_{\text{nominal}} = G_{\text{cl}}(s)\,r(t)$$
+$$\text{Residual: } e_k = y_{\text{meas},k} - y_{\text{nominal},k}$$
 
 **Observer Gain**: Use steady-state Kalman gain $K_{\infty}$ computed from:
 - Process noise covariance: $Q = 10^{-6} I$ (very small; plant is deterministic)
 - Measurement noise covariance: $R = 10^{-4}$ (sensor noise ~0.01 pu RMS)
 
-$$K_{\infty} = \text{solve steady-state Riccati equation}$$
+The previous observer-based design was too adaptive for additive measurement attacks in Phase 3 and could absorb the bias before the threshold was reached. The direct-baseline detector is intentionally simpler and more stable for the current test harness.
 
 ### 3.3 Detection Algorithm
 

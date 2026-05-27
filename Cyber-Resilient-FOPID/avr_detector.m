@@ -59,27 +59,36 @@ A = ss_sys.A; B = ss_sys.B; C = ss_sys.C; D = ss_sys.D;
 
 nx = size(A,1);
 
-% For Kalman-like observer, use LQE (continuous)
-% Ensure Q and R are appropriate sizes
-Q = detector_config.Q * eye(nx);
-R = detector_config.R;
+residuals = zeros(N,1);
+threshold = NaN;
+attack_flag = false;
+confidence = 0;
+detection_time = NaN;
+exceed_count = 0;
 
-% Compute steady-state Kalman gain (continuous LQE)
+% Build the nominal baseline response from the same model used for comparison.
+% The attack is additive on the measurement, so the detector should see it in
+% the direct residual against the nominal output rather than adapting it away.
 try
-    [~,~,Kf] = lqe(A, eye(nx), C, Q, R);
+    y_nominal = lsim(ss_sys, r_ref, t);
 catch
-    % fallback: use place to place eigenvalues
-    p = eig(A) * 0.8;
-    try
-        Kf = place(A', C', p)';
-    catch
-        Kf = eye(nx, size(C,1));
+    % Fallback: use a simple Euler simulation of the nominal model.
+    A = ss_sys.A; B = ss_sys.B; C = ss_sys.C; D = ss_sys.D;
+    xnom = zeros(size(A,1),1);
+    y_nominal = zeros(N,1);
+    for k = 1:N
+        if k == 1
+            dt = t(1);
+        else
+            dt = t(k) - t(k-1);
+        end
+        y_nominal(k) = C * xnom + D * r_ref(k);
+        xnom = xnom + (A * xnom + B * r_ref(k)) * dt;
     end
 end
 
-% Initialize
-xhat = zeros(nx,1);
-residuals = zeros(N,1);
+residuals = y_meas - y_nominal;
+residuals = max(min(residuals, detector_config.residual_clamp), -detector_config.residual_clamp);
 threshold = NaN;
 attack_flag = false;
 confidence = 0;
@@ -93,28 +102,8 @@ if isempty(idx_baseline_end)
     idx_baseline_end = min(N, round(detector_config.baseline_window / (t(2)-t(1))));
 end
 
-% Simulate observer with simple Euler integration
+% Detection metric using sliding window
 for k = 1:N
-    if k == 1
-        dt = t(1);
-    else
-        dt = t(k) - t(k-1);
-    end
-
-    % predictor
-    y_hat = C * xhat + D * r_ref(max(1,k));
-    e = y_meas(k) - y_hat;
-    % clamp residual to avoid numerical blowups
-    rc = detector_config.residual_clamp;
-    if ~isfinite(e), e = sign(e)*rc; end
-    e = max(min(e, rc), -rc);
-    residuals(k) = e;
-
-    % update xhat
-    xhat_dot = A * xhat + B * r_ref(max(1,k)) + Kf * e;
-    xhat = xhat + xhat_dot * dt;
-
-    % Baseline threshold calculation
     if k == idx_baseline_end
         sigma = std(residuals(1:idx_baseline_end));
         if sigma <= 0
@@ -123,26 +112,25 @@ for k = 1:N
         threshold = detector_config.threshold_factor * sigma;
     end
 
-    % Detection metric using sliding window
     win = detector_config.window_size;
     win_start = max(1, k - win + 1);
-        % Use median for robustness to outliers and reduce sensitivity to early transients
-        Jk = abs(e) + median(abs(residuals(win_start:k)));
+    % Use median for robustness to outliers and reduce sensitivity to early transients
+    Jk = abs(residuals(k)) + median(abs(residuals(win_start:k)));
 
-        % Only evaluate detection after baseline threshold computed and startup suppression
-        if ~isnan(threshold) && ~attack_flag && t(k) > detector_config.startup_suppress
-            if Jk > threshold
-                exceed_count = exceed_count + 1;
-            else
-                exceed_count = 0;
-            end
-            if exceed_count >= detector_config.min_consecutive
-                attack_flag = true;
-                % clamp confidence to avoid numerical extremes
-                confidence = min(Jk, detector_config.confidence_cap);
-                detection_time = t(k);
-            end
+    % Only evaluate detection after baseline threshold computed and startup suppression
+    if ~isnan(threshold) && ~attack_flag && t(k) > detector_config.startup_suppress
+        if Jk > threshold
+            exceed_count = exceed_count + 1;
+        else
+            exceed_count = 0;
         end
+        if exceed_count >= detector_config.min_consecutive
+            attack_flag = true;
+            % clamp confidence to avoid numerical extremes
+            confidence = min(Jk, detector_config.confidence_cap);
+            detection_time = t(k);
+        end
+    end
 end
 
 end
