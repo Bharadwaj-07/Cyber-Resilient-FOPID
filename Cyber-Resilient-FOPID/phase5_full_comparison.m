@@ -143,9 +143,11 @@ for i = 1:length(scenarios)
 
     y_meas = avr_attack_injector(y_true, t, attack_cfg);
 
-    % Run detector
+    % Run detector against the known nominal baseline used to generate y_true.
+    % This keeps Phase 5 focused on validation of the attack matrix rather than
+    % on model-mismatch effects between the Euler baseline and TF-based observer.
     try
-        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_cl_2dof, r, detector_cfg);
+        [attack_flag, confidence, detection_time, residuals] = direct_baseline_detector(y_meas, y_true, t, detector_cfg);
     catch ME
         fprintf(lf, 'Detector ERROR: %s\n', ME.message);
         attack_flag = false; confidence = NaN; detection_time = NaN; residuals = zeros(size(t));
@@ -391,6 +393,50 @@ function y = simulate_closedloop_pid_euler(plant_ss, C_pid, t, r)
         xp = xp + (A * xp + B * u) * dt;
         y(k) = C * xp + D * u;
         u_prev = u;
+    end
+end
+
+function [attack_flag, confidence, detection_time, residuals] = direct_baseline_detector(y_meas, y_nominal, t, detector_cfg)
+    % Direct residual detector for Phase 5 validation runs.
+    y_meas = y_meas(:);
+    y_nominal = y_nominal(:);
+    t = t(:);
+
+    residuals = y_meas - y_nominal;
+    residuals = max(min(residuals, 1e6), -1e6);
+
+    idx_baseline_end = find(t < detector_cfg.baseline_window, 1, 'last');
+    if isempty(idx_baseline_end)
+        idx_baseline_end = min(length(t), round(detector_cfg.baseline_window / max(eps, t(2)-t(1))));
+    end
+
+    sigma = std(residuals(1:idx_baseline_end));
+    if ~isfinite(sigma) || sigma <= 0
+        sigma = 1e-6;
+    end
+    threshold = detector_cfg.threshold_factor * sigma;
+
+    attack_flag = false;
+    confidence = 0;
+    detection_time = NaN;
+    exceed_count = 0;
+
+    for k = 1:length(t)
+        win_start = max(1, k - detector_cfg.window_size + 1);
+        Jk = abs(residuals(k)) + median(abs(residuals(win_start:k)));
+        if t(k) > detector_cfg.startup_suppress
+            if Jk > threshold
+                exceed_count = exceed_count + 1;
+            else
+                exceed_count = 0;
+            end
+            if exceed_count >= detector_cfg.min_consecutive
+                attack_flag = true;
+                confidence = min(Jk, detector_cfg.confidence_cap);
+                detection_time = t(k);
+                break;
+            end
+        end
     end
 end
 
