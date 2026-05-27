@@ -5,7 +5,8 @@ function [attack_flag, confidence, detection_time, residuals] = avr_detector(y_m
 % Inputs:
 %  y_meas: N×1 measured output (possibly attacked)
 %  t: N×1 time vector
-%  plant_tf: transfer function model of forward path (G_fwd). Use ss(plant_tf) inside
+%  plant_tf: nominal closed-loop transfer function from reference to output
+%            (the same model used to generate the baseline response)
 %  r_ref: N×1 reference signal (setpoint)
 %  detector_config: struct with fields:
 %     .baseline_window (float, seconds) default 5
@@ -41,7 +42,7 @@ if length(y_meas) ~= N || length(r_ref) ~= N
     error('t, y_meas, and r_ref must have same length');
 end
 
-% Build continuous-state model from plant_tf (series of ampl/exc/gen)
+% Build continuous-state model from the nominal closed-loop reference-to-output model
 try
     sys = minreal(plant_tf);
     ss_sys = ss(sys);

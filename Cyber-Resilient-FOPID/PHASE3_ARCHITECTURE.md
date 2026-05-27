@@ -114,7 +114,7 @@ end
 
 ### 3.2 Kalman Filter Design
 
-**Plant for estimation**: Use the **nominal plant without controller** (open-loop) as the observer basis.
+**Plant for estimation**: Use the **nominal closed-loop reference-to-output model** that generated the baseline response. This keeps the observer aligned with the signal being measured and avoids early false positives from open-loop mismatch.
 
 Plant model:
 $$\dot{x} = A_p x + B_p r$$
@@ -185,20 +185,20 @@ end
 
 **Algorithm**:
 ```
-1. Build Kalman filter from nominal plant (open-loop, no controller)
+1. Build Kalman filter from nominal closed-loop model used for the baseline response
 2. For t ∈ [0, baseline_window]:
      Compute residuals, store σ_baseline = std(residuals)
      threshold = 2 × σ_baseline
 3. Initialize: attack_flag = false, detection_time = nan
 4. For k = 1:N (time steps):
-     Compute Kalman prediction: ŷ_k|k-1 = C·x̂ + feedthrough
-     Residual: e_k = y_meas(k) - ŷ_k|k-1
-     Metric: J_k = |e_k| + (1/N_w)·sum(|e_i| for recent window)
-     If J_k > threshold AND ~attack_flag:
-         attack_flag = true
-         detection_time = t(k)
-         confidence = J_k
-         break
+   Compute Kalman prediction: ŷ_k|k-1 = C·x̂ + feedthrough
+   Residual: e_k = y_meas(k) - ŷ_k|k-1
+   Metric: J_k = |e_k| + median(|e_i| for recent window)
+   If J_k > threshold for `min_consecutive` samples:
+     attack_flag = true
+     detection_time = t(k)
+     confidence = min(J_k, confidence_cap)
+     stop updating the nominal mode once detector-driven switching begins
 5. Return all outputs
 ```
 

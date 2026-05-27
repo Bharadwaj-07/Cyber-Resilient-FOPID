@@ -75,7 +75,7 @@ for i = 1:length(attack_types)
 
     % Detector
     % Detector
-    [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_fwd, r, detector_cfg);
+    [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_cl, r, detector_cfg);
 
     % Switcher: use C_y_2dof as error-path controller for 2DoF
     switcher_cfg = switcher_cfg;

@@ -102,6 +102,7 @@ metric_thresh = 5 * std(metric(1:max(1,round(0.5/(t(2)-t(1))))));
 
 use_detector_hint = logical(switcher_config.detector_attack_flag) && isfinite(switcher_config.detector_attack_time);
 detector_switch_done = false;
+lock_to_pid = false;
 
 for k = 1:N
     % Mode transitions
@@ -110,9 +111,10 @@ for k = 1:N
             if mode ~= 2
                 from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
             end
+            lock_to_pid = true;
             detector_switch_done = true;
         end
-    elseif mode == 1
+    elseif mode == 1 && ~lock_to_pid
         if metric(k) > metric_thresh
             from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
         end
@@ -129,7 +131,7 @@ for k = 1:N
         end
     elseif mode == 3
         % recovery: require hysteresis_time of quiet before returning to normal
-        if t(k) - last_switch_time >= switcher_config.hysteresis_time
+        if ~lock_to_pid && t(k) - last_switch_time >= switcher_config.hysteresis_time
             recent_metric = mean(metric(max(1,k-win):k));
             if recent_metric < metric_thresh/2
                 from_mode = mode; mode = 1; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);

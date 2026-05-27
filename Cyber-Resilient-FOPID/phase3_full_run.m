@@ -97,7 +97,7 @@ try
     detector_config.window_size = 100;       % samples
     detector_config.threshold_factor = 5;    % conservative
     detector_config.min_consecutive = 7;    % consecutive samples
-    detector_config.startup_suppress = 5;
+    detector_config.startup_suppress = 6;
 
     % Switcher config
     switcher_config = struct();
@@ -141,7 +141,7 @@ try
         y_meas = avr_attack_injector(y_true, t, attack_config);
 
         % Detector run
-        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_fwd, r_ref, detector_config);
+        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_cl, r_ref, detector_config);
         detection_delay = NaN; if ~isnan(detection_time), detection_delay = detection_time - attack_config.start_time; end
 
         % Switcher run (simulate controller outputs and modes)

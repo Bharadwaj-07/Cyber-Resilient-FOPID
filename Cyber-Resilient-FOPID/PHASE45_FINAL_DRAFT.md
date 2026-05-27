@@ -49,11 +49,11 @@ Design and Implementation Details
 
 2) Detector integration
 
-- The detector computes residuals using a steady-state Kalman-like observer (LQE) on the nominal plant model.
+- The detector computes residuals using a steady-state Kalman-like observer (LQE) on the nominal closed-loop baseline model.
 - Baseline sigma is computed over `baseline_window` seconds. Threshold = `threshold_factor * sigma`.
 - Detection metric uses `Jk = |e_k| + median(|residuals_recent|)` to reduce outlier sensitivity.
 - Detection requires `min_consecutive` consecutive windows above threshold before firing.
-- `avr_switcher` accepts detector hint via `switcher_config.detector_attack_flag` and `switcher_config.detector_attack_time` — when provided, it forces a switch at the detection time (preferred over heuristic metric).
+- `avr_switcher` accepts detector hint via `switcher_config.detector_attack_flag` and `switcher_config.detector_attack_time` — when provided, it forces a switch at the detection time and then locks the run into attack handling to avoid repeated re-triggering on the same event.
 
 3) Phase 5 comparison
 

@@ -114,7 +114,7 @@ for i = 1:length(scenarios)
 
     % Run detector
     try
-        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_fwd, r, detector_cfg);
+        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_cl_2dof, r, detector_cfg);
     catch ME
         fprintf(lf, 'Detector ERROR: %s\n', ME.message);
         attack_flag = false; confidence = NaN; detection_time = NaN; residuals = zeros(size(t));

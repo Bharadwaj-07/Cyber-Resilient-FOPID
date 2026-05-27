@@ -75,7 +75,7 @@ for tfac = threshold_factors
                         y_meas = avr_attack_injector(y_true, t, cfg);
 
                         % Detector
-                        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_fwd, r, detector_cfg);
+                        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_cl, r, detector_cfg);
 
                         % Switcher (simulate control action)
                         switcher_cfg.detector_attack_flag = attack_flag;

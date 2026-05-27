@@ -73,7 +73,7 @@ try
 
     % Run detector
     try
-        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_fwd, r_ref, detector_config);
+        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_cl, r_ref, detector_config);
     catch ME
         fprintf(lf, 'Detector ERROR: %s\n', ME.message);
         rethrow(ME);
