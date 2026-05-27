@@ -245,6 +245,7 @@ for k = 1:N
             detector_switch_done = true;
         end
     else
+        if switcher_config.heuristic_switching_enabled
         % use metric-based switching as before
             if mode == 1 && metric(k) > metric_thresh
             from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
@@ -288,6 +289,7 @@ for k = 1:N
                     from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
                 end
             end
+        end
         end
     end
 
