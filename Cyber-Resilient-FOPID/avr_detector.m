@@ -24,8 +24,8 @@ if nargin < 5 || isempty(detector_config)
     detector_config = struct();
 end
 % Tightened defaults to reduce false/early triggers; user can override via detector_config
-if ~isfield(detector_config,'baseline_window'), detector_config.baseline_window = 6; end
-if ~isfield(detector_config,'window_size'), detector_config.window_size = 200; end
+if ~isfield(detector_config,'baseline_window'), detector_config.baseline_window = 5; end
+if ~isfield(detector_config,'window_size'), detector_config.window_size = 100; end
 if ~isfield(detector_config,'threshold_factor'), detector_config.threshold_factor = 3; end
 if ~isfield(detector_config,'Q'), detector_config.Q = 1e-6; end
 if ~isfield(detector_config,'R'), detector_config.R = 1e-4; end
@@ -85,8 +85,9 @@ confidence = 0;
 detection_time = NaN;
 exceed_count = 0;
 
-% Precompute indices for baseline window
-idx_baseline_end = find(t <= detector_config.baseline_window, 1, 'last');
+% Precompute indices for the baseline window. Use a strict boundary so the
+% first attack sample at t == baseline_window is not folded into the nominal baseline.
+idx_baseline_end = find(t < detector_config.baseline_window, 1, 'last');
 if isempty(idx_baseline_end)
     idx_baseline_end = min(N, round(detector_config.baseline_window / (t(2)-t(1))));
 end
@@ -128,7 +129,7 @@ for k = 1:N
         Jk = abs(e) + median(abs(residuals(win_start:k)));
 
         % Only evaluate detection after baseline threshold computed and startup suppression
-        if ~isnan(threshold) && ~attack_flag && t(k) >= detector_config.startup_suppress
+        if ~isnan(threshold) && ~attack_flag && t(k) > detector_config.startup_suppress
             if Jk > threshold
                 exceed_count = exceed_count + 1;
             else

@@ -65,11 +65,11 @@ try
 
     % Detector config (defaults are OK)
     detector_config = struct();
-    detector_config.baseline_window = 6;   % seconds
-    detector_config.window_size = 200;     % samples
+    detector_config.baseline_window = 5;    % seconds
+    detector_config.window_size = 100;      % samples
     detector_config.threshold_factor = 5;  % more conservative
     detector_config.min_consecutive = 7;
-    detector_config.startup_suppress = 6;
+    detector_config.startup_suppress = 5;
 
     % Run detector
     try

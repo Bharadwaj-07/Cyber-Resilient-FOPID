@@ -363,7 +363,7 @@ function ss_sys = safe_controller_ss(C)
             tfC = tf(C);
             try
                 [num, den] = tfdata(tfC, 'v');
-                if ~isempty(num) && ~isempty(den) && numel(num) >= numel(den)
+                if ~isempty(num) && ~isempty(den) && numel(num) > numel(den)
                     k = real(evalfr(tfC, 0));
                     if ~isfinite(k), k = 1; end
                     ss_sys = ss(k);

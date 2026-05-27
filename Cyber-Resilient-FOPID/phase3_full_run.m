@@ -93,11 +93,11 @@ try
 
     % Detector default config
     detector_config = struct();
-    detector_config.baseline_window = 6;    % seconds
-    detector_config.window_size = 200;      % samples
+    detector_config.baseline_window = 5;     % seconds
+    detector_config.window_size = 100;       % samples
     detector_config.threshold_factor = 5;    % conservative
     detector_config.min_consecutive = 7;    % consecutive samples
-    detector_config.startup_suppress = 6;
+    detector_config.startup_suppress = 5;
 
     % Switcher config
     switcher_config = struct();
