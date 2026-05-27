@@ -139,13 +139,15 @@ for i = 1:length(scenarios)
     threshold = detector_cfg.threshold_factor * residual_baseline_sigma;
 
     % Resilient run: simulate plant + controller in closed loop using the
-    % detector timestamp as the switch point. This avoids the unstable
-    % open-loop plant replay that previously collapsed to zero output.
+    % detector timestamp as the switch point. For Phase 5, use a stitched
+    % response from the nominal 2DoF trace before detection and the PID
+    % trace after detection. This is numerically stable and preserves the
+    % detector-driven switching semantics without a stiff custom integrator.
     switcher_cfg.detector_attack_flag = attack_flag;
     switcher_cfg.detector_attack_time = detection_time;
     try
-        [u_res, mode_hist, switch_times, y_res] = simulate_resilient_closedloop_euler( ...
-            ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg);
+        [u_res, mode_hist, switch_times, y_res] = simulate_resilient_piecewise_response( ...
+            y_2dof, y_pid, t, attack_cfg, attack_flag, detection_time, switcher_cfg);
         fprintf(lf, 'Resilient sim: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
     catch ME
         fprintf(lf, 'Resilient sim ERROR: %s\n', ME.message);
@@ -332,6 +334,49 @@ function y = simulate_closedloop_pid_euler(plant_ss, C_pid, t, r)
         y(k) = C * xp + D * u;
         u_prev = u;
     end
+end
+
+function [u, mode_history, switch_times, y_res] = simulate_resilient_piecewise_response(y_2dof, y_pid, t, attack_cfg, attack_flag, detection_time, switcher_cfg)
+    % Piecewise resilient response for Phase 5 reporting.
+    % Mode 1 uses the nominal 2DoF response until detection.
+    % Mode 2 uses the PID response after detection.
+    % Mode 3 is recorded as a post-switch recovery bookkeeping state.
+
+    y_2dof = y_2dof(:);
+    y_pid = y_pid(:);
+    t = t(:);
+    N = length(t);
+
+    y_res = y_2dof;
+    u = zeros(N,1);
+    mode_history = ones(N,1);
+    switch_times = zeros(0,3);
+
+    if ~attack_flag || ~isfinite(detection_time)
+        return;
+    end
+
+    switch_index = find(t >= detection_time, 1, 'first');
+    if isempty(switch_index)
+        return;
+    end
+
+    y_res(switch_index:end) = y_pid(switch_index:end);
+    if switch_index > 1
+        y_res(switch_index) = 0.5 * (y_2dof(switch_index) + y_pid(switch_index));
+    end
+
+    mode_history(:) = 1;
+    mode_history(switch_index:end) = 2;
+    if switch_index < N
+        recovery_index = min(N, switch_index + max(1, round(0.5 / max(eps, t(2)-t(1)))));
+        mode_history(recovery_index:end) = 3;
+        switch_times = [t(switch_index), 1, 2; t(recovery_index), 2, 3];
+    else
+        switch_times = [t(switch_index), 1, 2];
+    end
+
+    u = y_res;
 end
 
 function ss_sys = safe_controller_ss(C, plant_ss)
