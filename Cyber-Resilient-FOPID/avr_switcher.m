@@ -55,9 +55,11 @@ global AVR_SHARED_LOG_FID AVR_SHARED_LOG_PATH
 if exist('AVR_SHARED_LOG_FID','var') && ~isempty(AVR_SHARED_LOG_FID) && AVR_SHARED_LOG_FID > 0
     lf = AVR_SHARED_LOG_FID;
     logpath4 = AVR_SHARED_LOG_PATH;
+    closeLog = false;
 else
     logpath4 = fullfile(outdir4, sprintf('phase4_switcher_%s.log', run_ts));
     lf = fopen(logpath4,'w');
+    closeLog = lf > 2;
 end
 if lf > 0
     fprintf(lf, 'AVR_SWITCHER log - %s\n', datestr(now));
@@ -350,7 +352,9 @@ if exist('lf','var') && lf>0
             fprintf(lf, 'Failed saving full state history: %s\n', ME.message);
         end
     end
-    fclose(lf);
+    if closeLog
+        fclose(lf);
+    end
 end
 
 end
@@ -363,11 +367,19 @@ function ss_sys = safe_controller_ss(C)
             tfC = tf(C);
             try
                 [num, den] = tfdata(tfC, 'v');
-                if ~isempty(num) && ~isempty(den) && numel(num) > numel(den)
-                    k = real(evalfr(tfC, 0));
-                    if ~isfinite(k), k = 1; end
-                    ss_sys = ss(k);
-                    return;
+                if ~isempty(num) && ~isempty(den)
+                    isProper = true;
+                    try
+                        isProper = isproper(tfC);
+                    catch
+                        isProper = numel(num) <= numel(den);
+                    end
+                    if ~isProper
+                        k = real(evalfr(tfC, 0));
+                        if ~isfinite(k), k = 1; end
+                        ss_sys = ss(k);
+                        return;
+                    end
                 end
             catch
                 % Fall through to the general conversion path.

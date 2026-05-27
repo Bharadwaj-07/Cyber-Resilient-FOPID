@@ -192,12 +192,12 @@ try
 catch ME
     fprintf(fidlog, 'ERROR: %s\n', ME.message);
     if exist('csvfid','var') && csvfid > 0, fclose(csvfid); end
-    if exist('fidlog','var') && fidlog > 0, fclose(fidlog); end
+    if closeLog && exist('fidlog','var') && fidlog > 0, fclose(fidlog); end
     rethrow(ME);
 end
 
 if exist('csvfid','var') && csvfid > 0, fclose(csvfid); end
-if exist('fidlog','var') && fidlog > 0, fclose(fidlog); end
+if closeLog && exist('fidlog','var') && fidlog > 0, fclose(fidlog); end
 
 fprintf('Phase 3 full run complete. Results in %s\n', logdir);
 

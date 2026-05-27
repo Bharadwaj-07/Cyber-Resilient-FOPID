@@ -291,11 +291,19 @@ function ss_sys = safe_controller_ss(C, plant_ss)
             tfC = tf(C);
             try
                 [num, den] = tfdata(tfC, 'v');
-                if ~isempty(num) && ~isempty(den) && numel(num) > numel(den)
-                    k = real(evalfr(tfC, 0));
-                    if ~isfinite(k), k = 1; end
-                    ss_sys = ss(k);
-                    return;
+                if ~isempty(num) && ~isempty(den)
+                    isProper = true;
+                    try
+                        isProper = isproper(tfC);
+                    catch
+                        isProper = numel(num) <= numel(den);
+                    end
+                    if ~isProper
+                        k = real(evalfr(tfC, 0));
+                        if ~isfinite(k), k = 1; end
+                        ss_sys = ss(k);
+                        return;
+                    end
                 end
             catch
                 % Fall through to the general conversion path.
