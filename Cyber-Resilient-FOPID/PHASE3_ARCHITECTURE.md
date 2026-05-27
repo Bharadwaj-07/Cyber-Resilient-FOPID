@@ -117,6 +117,7 @@ will show anomalous statistics (elevated mean, variance, or autocorrelation) wit
 ### 3.2 Kalman Filter Design
 
 **Plant for estimation**: Use the **nominal closed-loop reference-to-output model** that generated the baseline response. The detector runs the same nominal model offline to generate $y_{\text{nominal}}(t)$ and compares it directly to the attacked measurement.
+For the Phase 3 scenario matrix, detection is suppressed until each scenario's own attack start time so later scenarios do not false-trigger on the baseline settling tail.
 
 Plant model:
 $$\dot{x} = A_p x + B_p r$$

@@ -137,6 +137,10 @@ try
         if isfield(sc,'frequency'), attack_config.frequency = sc.frequency; end
         attack_config.start_time = sc.start_time;
 
+        % Suppress detector evaluation until the scenario's own attack start.
+        % This keeps later scenarios from firing on the baseline settling tail.
+        detector_config.startup_suppress = attack_config.start_time;
+
         % Create attacked measurement
         y_meas = avr_attack_injector(y_true, t, attack_config);
 
