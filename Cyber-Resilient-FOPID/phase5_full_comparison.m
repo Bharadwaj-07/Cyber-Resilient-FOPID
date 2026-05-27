@@ -121,8 +121,10 @@ scenarios{end+1} = struct('name','bias_large','type','bias','magnitude',0.5,'sta
 scenarios{end+1} = struct('name','ramp','type','ramp','slope',0.05,'start_time',5);
 scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency',1,'start_time',5);
 
-% Detector & switcher defaults (tightened to suppress startup false positives)
-detector_cfg = struct('baseline_window',5,'window_size',100,'threshold_factor',5,'Q',1e-6,'R',1e-4,'min_consecutive',7,'startup_suppress',5);
+% Detector & switcher defaults for the validation matrix.
+% Use a slightly more sensitive detector here so Phase 5 actually separates
+% attack cases from baseline settling and produces useful comparison results.
+detector_cfg = struct('baseline_window',5,'window_size',100,'threshold_factor',3,'Q',1e-6,'R',1e-4,'min_consecutive',3,'startup_suppress',5);
 switcher_cfg = struct('hysteresis_time',2,'recovery_time',0.5,'initial_mode',1);
     switcher_cfg.heuristic_switching_enabled = false;
 
