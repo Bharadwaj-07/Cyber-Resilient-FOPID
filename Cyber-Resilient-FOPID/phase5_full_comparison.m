@@ -122,9 +122,9 @@ scenarios{end+1} = struct('name','ramp','type','ramp','slope',0.05,'start_time',
 scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency',1,'start_time',5);
 
 % Detector & switcher defaults for the validation matrix.
-% Use a slightly more sensitive detector here so Phase 5 actually separates
-% attack cases from baseline settling and produces useful comparison results.
-detector_cfg = struct('baseline_window',5,'window_size',100,'threshold_factor',3,'Q',1e-6,'R',1e-4,'min_consecutive',3,'startup_suppress',5,'confidence_cap',10);
+% Use a tighter detector here so Phase 5 separates attack cases earlier and
+% reduces quantized detection times in the anomaly summary.
+detector_cfg = struct('baseline_window',5,'window_size',40,'threshold_factor',2,'Q',1e-6,'R',1e-4,'min_consecutive',1,'startup_suppress',4.5,'confidence_cap',10);
 switcher_cfg = struct('hysteresis_time',2,'recovery_time',0.5,'initial_mode',1);
     switcher_cfg.heuristic_switching_enabled = false;
 
@@ -402,10 +402,10 @@ function [attack_flag, confidence, detection_time, residuals] = direct_baseline_
         detector_cfg = struct();
     end
     if ~isfield(detector_cfg, 'baseline_window'), detector_cfg.baseline_window = 5; end
-    if ~isfield(detector_cfg, 'window_size'), detector_cfg.window_size = 100; end
-    if ~isfield(detector_cfg, 'threshold_factor'), detector_cfg.threshold_factor = 3; end
-    if ~isfield(detector_cfg, 'min_consecutive'), detector_cfg.min_consecutive = 3; end
-    if ~isfield(detector_cfg, 'startup_suppress'), detector_cfg.startup_suppress = detector_cfg.baseline_window; end
+    if ~isfield(detector_cfg, 'window_size'), detector_cfg.window_size = 40; end
+    if ~isfield(detector_cfg, 'threshold_factor'), detector_cfg.threshold_factor = 2; end
+    if ~isfield(detector_cfg, 'min_consecutive'), detector_cfg.min_consecutive = 1; end
+    if ~isfield(detector_cfg, 'startup_suppress'), detector_cfg.startup_suppress = max(0, detector_cfg.baseline_window - 0.5); end
     if ~isfield(detector_cfg, 'confidence_cap'), detector_cfg.confidence_cap = 10; end
 
     y_meas = y_meas(:);
@@ -433,7 +433,8 @@ function [attack_flag, confidence, detection_time, residuals] = direct_baseline_
 
     for k = 1:length(t)
         win_start = max(1, k - detector_cfg.window_size + 1);
-        Jk = abs(residuals(k)) + median(abs(residuals(win_start:k)));
+        window_abs = abs(residuals(win_start:k));
+        Jk = mean(window_abs) + std(window_abs) + abs(residuals(k));
         if t(k) > detector_cfg.startup_suppress
             if Jk > threshold
                 exceed_count = exceed_count + 1;
