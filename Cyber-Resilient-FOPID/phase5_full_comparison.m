@@ -124,7 +124,7 @@ scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency
 % Detector & switcher defaults for the validation matrix.
 % Use a slightly more sensitive detector here so Phase 5 actually separates
 % attack cases from baseline settling and produces useful comparison results.
-detector_cfg = struct('baseline_window',5,'window_size',100,'threshold_factor',3,'Q',1e-6,'R',1e-4,'min_consecutive',3,'startup_suppress',5);
+detector_cfg = struct('baseline_window',5,'window_size',100,'threshold_factor',3,'Q',1e-6,'R',1e-4,'min_consecutive',3,'startup_suppress',5,'confidence_cap',10);
 switcher_cfg = struct('hysteresis_time',2,'recovery_time',0.5,'initial_mode',1);
     switcher_cfg.heuristic_switching_enabled = false;
 
@@ -398,6 +398,16 @@ end
 
 function [attack_flag, confidence, detection_time, residuals] = direct_baseline_detector(y_meas, y_nominal, t, detector_cfg)
     % Direct residual detector for Phase 5 validation runs.
+    if nargin < 4 || isempty(detector_cfg)
+        detector_cfg = struct();
+    end
+    if ~isfield(detector_cfg, 'baseline_window'), detector_cfg.baseline_window = 5; end
+    if ~isfield(detector_cfg, 'window_size'), detector_cfg.window_size = 100; end
+    if ~isfield(detector_cfg, 'threshold_factor'), detector_cfg.threshold_factor = 3; end
+    if ~isfield(detector_cfg, 'min_consecutive'), detector_cfg.min_consecutive = 3; end
+    if ~isfield(detector_cfg, 'startup_suppress'), detector_cfg.startup_suppress = detector_cfg.baseline_window; end
+    if ~isfield(detector_cfg, 'confidence_cap'), detector_cfg.confidence_cap = 10; end
+
     y_meas = y_meas(:);
     y_nominal = y_nominal(:);
     t = t(:);
