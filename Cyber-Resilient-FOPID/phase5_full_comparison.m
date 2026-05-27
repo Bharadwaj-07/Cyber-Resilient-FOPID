@@ -123,6 +123,21 @@ for i = 1:length(scenarios)
     detection_delay = NaN; if ~isnan(detection_time), detection_delay = detection_time - attack_cfg.start_time; end
     fprintf(lf, 'Detector: flag=%d, confidence=%g, detection_time=%s, delay=%s\n', double(attack_flag), confidence, num2str(detection_time), num2str(detection_delay));
 
+    % Residual anomaly summary for CSV diagnostics
+    idx_baseline_end = find(t < detector_cfg.baseline_window, 1, 'last');
+    if isempty(idx_baseline_end)
+        idx_baseline_end = min(length(t), round(detector_cfg.baseline_window / (t(2)-t(1))));
+    end
+    residual_baseline_sigma = std(residuals(1:idx_baseline_end));
+    if ~isfinite(residual_baseline_sigma) || residual_baseline_sigma <= 0
+        residual_baseline_sigma = 1e-6;
+    end
+    residual_abs_max = max(abs(residuals));
+    residual_abs_mean = mean(abs(residuals));
+    residual_rms = sqrt(mean(residuals.^2));
+    residual_peak_to_sigma = residual_abs_max / residual_baseline_sigma;
+    threshold = detector_cfg.threshold_factor * residual_baseline_sigma;
+
     % Resilient run: simulate plant + controller in closed loop using the
     % detector timestamp as the switch point. This avoids the unstable
     % open-loop plant replay that previously collapsed to zero output.
@@ -142,6 +157,8 @@ for i = 1:length(scenarios)
     metrics.ITAE_2dof = itae(y_2dof);
     metrics.ITAE_pid = itae(y_pid);
     metrics.ITAE_res = itae(y_res);
+    metrics.delta_ITAE_res_pid = metrics.ITAE_res - metrics.ITAE_pid;
+    metrics.delta_ITAE_res_2dof = metrics.ITAE_res - metrics.ITAE_2dof;
 
     info2 = stepinfo(y_2dof, t);
     infoP = stepinfo(y_pid, t);
@@ -164,9 +181,30 @@ for i = 1:length(scenarios)
     row.scenario = sc.name; row.attack_type = sc.type;
     if isfield(sc,'magnitude'), row.attack_mag = sc.magnitude; else row.attack_mag = NaN; end
     if isfield(sc,'slope'), row.attack_slope = sc.slope; else row.attack_slope = NaN; end
+    if isfield(sc,'frequency'), row.attack_frequency = sc.frequency; else row.attack_frequency = NaN; end
+    row.attack_start_time = attack_cfg.start_time;
     row.detected = double(attack_flag); row.detection_time = detection_time; row.detection_delay = detection_delay; row.confidence = confidence;
+    row.residual_baseline_sigma = residual_baseline_sigma;
+    row.residual_abs_max = residual_abs_max;
+    row.residual_abs_mean = residual_abs_mean;
+    row.residual_rms = residual_rms;
+    row.residual_peak_to_sigma = residual_peak_to_sigma;
+    row.detector_threshold = threshold;
     row.ITAE_2dof = metrics.ITAE_2dof; row.ITAE_pid = metrics.ITAE_pid; row.ITAE_res = metrics.ITAE_res;
+    row.delta_ITAE_res_pid = metrics.delta_ITAE_res_pid;
+    row.delta_ITAE_res_2dof = metrics.delta_ITAE_res_2dof;
+    row.y2dof_final = y_2dof(end); row.y_pid_final = y_pid(end); row.y_res_final = y_res(end);
+    row.y2dof_peak = max(y_2dof); row.y_pid_peak = max(y_pid); row.y_res_peak = max(y_res);
+    row.y2dof_overshoot = info2.Overshoot; row.y_pid_overshoot = infoP.Overshoot; row.y_res_overshoot = infoR.Overshoot;
+    row.y2dof_settling = info2.SettlingTime; row.y_pid_settling = infoP.SettlingTime; row.y_res_settling = infoR.SettlingTime;
     row.mode_transitions = size(switch_times,1); row.final_mode = mode_hist(end);
+    if ~isempty(switch_times)
+        row.first_switch_time = switch_times(1,1);
+        row.last_switch_time = switch_times(end,1);
+    else
+        row.first_switch_time = NaN;
+        row.last_switch_time = NaN;
+    end
     rows{end+1} = row;
 end
 
@@ -176,10 +214,22 @@ csvfid = fopen(csvpath,'w');
 if csvfid < 0
     error('Could not open %s for writing.', csvpath);
 end
-fprintf(csvfid, 'scenario,attack_type,mag,slope,detected,det_time,det_delay,conf,ITAE_2DoF,ITAE_PID,ITAE_Res,mode_transitions,final_mode\n');
+fprintf(csvfid, ['scenario,attack_type,mag,slope,frequency,start_time,detected,det_time,det_delay,conf,' ...
+    'residual_baseline_sigma,residual_abs_max,residual_abs_mean,residual_rms,residual_peak_to_sigma,detector_threshold,' ...
+    'ITAE_2DoF,ITAE_PID,ITAE_Res,delta_ITAE_res_pid,delta_ITAE_res_2dof,' ...
+    'y2dof_final,y_pid_final,y_res_final,y2dof_overshoot,y_pid_overshoot,y_res_overshoot,' ...
+    'mode_transitions,final_mode,first_switch_time,last_switch_time\n']);
 for k = 1:length(rows)
     r = rows{k};
-    fprintf(csvfid, '%s,%s,%.4f,%.4f,%d,%.4f,%.4f,%.6g,%.6f,%.6f,%.6f,%d,%d\n', r.scenario, r.attack_type, r.attack_mag, r.attack_slope, r.detected, NaN2num(r.detection_time), NaN2num(r.detection_delay), r.confidence, r.ITAE_2dof, r.ITAE_pid, r.ITAE_res, r.mode_transitions, r.final_mode);
+    fprintf(csvfid, ['%s,%s,%.4f,%.4f,%.4f,%.3f,%d,%.4f,%.4f,%.6g,' ...
+        '%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,' ...
+        '%.6f,%.6f,%.6f,%.6f,%d,%d,%.4f,%.4f\n'], ...
+        r.scenario, r.attack_type, r.attack_mag, r.attack_slope, r.attack_frequency, r.attack_start_time, r.detected, ...
+        NaN2num(r.detection_time), NaN2num(r.detection_delay), r.confidence, ...
+        r.residual_baseline_sigma, r.residual_abs_max, r.residual_abs_mean, r.residual_rms, r.residual_peak_to_sigma, r.detector_threshold, ...
+        r.ITAE_2dof, r.ITAE_pid, r.ITAE_res, r.delta_ITAE_res_pid, r.delta_ITAE_res_2dof, ...
+        r.y2dof_final, r.y_pid_final, r.y_res_final, r.y2dof_overshoot, r.y_pid_overshoot, r.y_res_overshoot, ...
+        r.mode_transitions, r.final_mode, r.first_switch_time, r.last_switch_time);
 end
 fclose(csvfid);
 
