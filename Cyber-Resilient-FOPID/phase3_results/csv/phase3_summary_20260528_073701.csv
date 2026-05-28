@@ -1,6 +1,0 @@
-scenario_id,attack_type,attack_magnitude,attack_slope,attack_frequency,attack_start_time,attack_detected,detection_time,detection_delay,confidence,mode_transitions,final_mode
-1,bias,0.2000,NaN,NaN,6.000,1,6.0070,0.0070,0.2,2,3
-2,bias,0.6000,NaN,NaN,6.000,1,6.0070,0.0070,0.6,2,3
-3,ramp,NaN,0.0500,NaN,8.000,1,8.0070,0.0070,0.00035,2,3
-4,sine,0.3000,NaN,1.0000,10.000,1,10.0070,0.0070,0.0131904,2,3
-5,bias,0.3000,NaN,NaN,12.000,1,12.0070,0.0070,0.3,2,3

@@ -1,4 +1,4 @@
-Run all phases log - 28-May-2026 09:21:26
+Run all phases log - 28-May-2026 10:44:26
 Running avr_validate_plant...
 avr_validate_plant completed
 Running avr_closedloop_2dof...
@@ -8,82 +8,37 @@ avr_compare_controllers completed
 Running avr_phase3_tune...
 Phase3 tuning failed: Undefined function 'zn_pid' for input arguments of type 'tf'.
 Running phase3_quick_test...
-Phase3 quick run log - 28-May-2026 09:26:44
+Phase3 quick run log - 28-May-2026 10:48:23
 Detector: flag=1, confidence=0.5, detection_time=5.07
-Saved results MAT to /MATLAB Drive/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/mat/results_phase3_quick_20260528_092644.mat
+Saved results MAT to /MATLAB Drive/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/mat/results_phase3_quick_20260528_104823.mat
 phase3_quick_test completed
 Running phase3_full_run...
-Phase3 full run log — 28-May-2026 09:26:49
+Phase3 full run log — 28-May-2026 10:48:28
 
 Loading parameters...
 Loading phase2 controllers...
 Computing baseline response...
 
 --- Running scenario 1 (bias) ---
-AVR_SWITCHER log - 28-May-2026 09:26:49
-hysteresis_time=2.000, recovery_time=0.500, initial_mode=1
-detector_attack_flag=1
-detector_attack_time=6.007
-
-Switch events: 2
-t=6.0070: 1 -> 2
-t=6.5070: 2 -> 3
-Final mode: 3
-Scenario 1: detected=1, detection_time=6.007, delay=0.007, mode_trans=2, final_mode=3
+Scenario 1: detected=1, detection_time=6.007, delay=0.007, residual_rms=0.1744, residual_peak=0.2000
 
 --- Running scenario 2 (bias) ---
-AVR_SWITCHER log - 28-May-2026 09:26:57
-hysteresis_time=2.000, recovery_time=0.500, initial_mode=1
-detector_attack_flag=1
-detector_attack_time=6.007
-
-Switch events: 2
-t=6.0070: 1 -> 2
-t=6.5070: 2 -> 3
-Final mode: 3
-Scenario 2: detected=1, detection_time=6.007, delay=0.007, mode_trans=2, final_mode=3
+Scenario 2: detected=1, detection_time=6.007, delay=0.007, residual_rms=0.5231, residual_peak=0.6000
 
 --- Running scenario 3 (ramp) ---
-AVR_SWITCHER log - 28-May-2026 09:27:06
-hysteresis_time=2.000, recovery_time=0.500, initial_mode=1
-detector_attack_flag=1
-detector_attack_time=8.007
-
-Switch events: 2
-t=8.0070: 1 -> 2
-t=8.5070: 2 -> 3
-Final mode: 3
-Scenario 3: detected=1, detection_time=8.007, delay=0.007, mode_trans=2, final_mode=3
+Scenario 3: detected=1, detection_time=8.007, delay=0.007, residual_rms=0.4047, residual_peak=0.8500
 
 --- Running scenario 4 (sine) ---
-AVR_SWITCHER log - 28-May-2026 09:27:15
-hysteresis_time=2.000, recovery_time=0.500, initial_mode=1
-detector_attack_flag=1
-detector_attack_time=10.007
-
-Switch events: 2
-t=10.0070: 1 -> 2
-t=10.5070: 2 -> 3
-Final mode: 3
-Scenario 4: detected=1, detection_time=10.007, delay=0.007, mode_trans=2, final_mode=3
+Scenario 4: detected=1, detection_time=10.007, delay=0.007, residual_rms=0.1643, residual_peak=0.3000
 
 --- Running scenario 5 (bias) ---
-AVR_SWITCHER log - 28-May-2026 09:27:25
-hysteresis_time=2.000, recovery_time=0.500, initial_mode=1
-detector_attack_flag=1
-detector_attack_time=12.007
+Scenario 5: detected=1, detection_time=12.007, delay=0.007, residual_rms=0.2163, residual_peak=0.3000
 
-Switch events: 2
-t=12.0070: 1 -> 2
-t=12.5070: 2 -> 3
-Final mode: 3
-Scenario 5: detected=1, detection_time=12.007, delay=0.007, mode_trans=2, final_mode=3
-
-Saved results to /MATLAB Drive/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/mat/phase3_data_20260528_092649.mat and /MATLAB Drive/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/csv/phase3_summary_20260528_092649.csv
+Saved results to /MATLAB Drive/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/mat/phase3_data_20260528_104828.mat and /MATLAB Drive/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/csv/phase3_summary_20260528_104828.csv
 phase3_full_run completed
 phase3_full_run completed
 Running phase5_full_comparison...
-Phase5 run log - 28-May-2026 09:27:34
+Phase5 run log - 28-May-2026 10:49:00
 Detector: flag=1, confidence=0.129996, detection_time=5.002, delay=0.002
 Resilient sim: transitions=1, final_mode=2
 Saved results: /MATLAB Drive/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase5_results/bias_small.mat
