@@ -1,0 +1,33 @@
+Phase5 run log - 28-May-2026 13:41:20
+Loaded avr_phase2.mat
+Built 2DoF FOPID from best_params
+
+--- Scenario: bias_small ---
+  Detector: flag=1  det_time=5.012  delay=0.012  conf=1.4499
+  Resilient: transitions=1  final_mode=2
+  Saved plot: results/phase5/plots/bias_small.png
+  ITAE: 1DoF=69.5272  2DoF=224.5564  PID=30.5614  Res=22687.6006
+  Improvement vs 2DoF: -10003.3%   vs PID: -74136.0%
+
+--- Scenario: bias_large ---
+  Detector: flag=1  det_time=5.005  delay=0.005  conf=3.3251
+  Resilient: transitions=1  final_mode=2
+  Saved plot: results/phase5/plots/bias_large.png
+  ITAE: 1DoF=172.4398  2DoF=327.4690  PID=149.5852  Res=23892.0494
+  Improvement vs 2DoF: -7196.0%   vs PID: -15872.2%
+
+--- Scenario: ramp ---
+  Detector: flag=1  det_time=5.500  delay=0.500  conf=1.0052
+  Resilient: transitions=1  final_mode=2
+  Saved plot: results/phase5/plots/ramp.png
+  ITAE: 1DoF=198.9441  2DoF=353.9733  PID=176.9130  Res=21545.4194
+  Improvement vs 2DoF: -5986.7%   vs PID: -12078.5%
+
+--- Scenario: sine ---
+  Detector: flag=1  det_time=5.060  delay=0.060  conf=1.1338
+  Resilient: transitions=1  final_mode=2
+  Saved plot: results/phase5/plots/sine.png
+  ITAE: 1DoF=44.0431  2DoF=199.0723  PID=3.1439  Res=22244.1018
+  Improvement vs 2DoF: -11073.9%   vs PID: -707422.2%
+
+Phase5 complete.

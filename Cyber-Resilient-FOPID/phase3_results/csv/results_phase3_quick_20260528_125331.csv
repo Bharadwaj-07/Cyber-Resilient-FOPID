@@ -1,0 +1,2 @@
+attack_detected,confidence,detection_time,detection_delay,attack_start_time
+1,0.500000,5.070000,0.070000,5.000000

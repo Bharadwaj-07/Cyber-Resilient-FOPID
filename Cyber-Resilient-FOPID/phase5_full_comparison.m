@@ -136,7 +136,7 @@ scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency
 % Use a tighter detector here so Phase 5 separates attack cases earlier and
 % reduces quantized detection times in the anomaly summary.
 detector_cfg = struct('baseline_window',5,'window_size',50,'threshold_factor',3,'Q',1e-6,'R',1e-4,'min_consecutive',3,'startup_suppress',4.8,'confidence_cap',10);
-switcher_cfg = struct('hysteresis_time',2,'blend_time',1.0,'recovery_time',3.0,'recovery_gain',3.0,'actuator_limits',[-10 10],'initial_mode',1);
+switcher_cfg = struct('hysteresis_time',2,'blend_time',0.5,'recovery_time',1.0,'actuator_limits',[-10 10],'initial_mode',1);
     switcher_cfg.heuristic_switching_enabled = false;
 
 % Prepare results table
@@ -860,23 +860,17 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
     else
         blend_time = switcher_cfg.blend_time;
     end
-    % recovery feed-forward parameters: temporary push to drive output back to setpoint
-    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'recovery_time')
-        recovery_time = 2.0; % seconds over which to apply recovery boost
-    else
-        recovery_time = switcher_cfg.recovery_time;
-    end
-    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'recovery_gain')
-        recovery_gain = 2.0; % scale of feedforward push
-    else
-        recovery_gain = switcher_cfg.recovery_gain;
-    end
     if isfinite(detection_time)
         blend_end_time = detection_time + max(0, blend_time);
         blend_end_index = find(t >= blend_end_time, 1, 'first');
         if isempty(blend_end_index), blend_end_index = switch_index; end
     else
         blend_end_time = NaN; blend_end_index = N + 1;
+    end
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'recovery_time')
+        recovery_time = 1.0;
+    else
+        recovery_time = switcher_cfg.recovery_time;
     end
     % actuator limits
     if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'actuator_limits')
@@ -889,8 +883,6 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
             umax = 10; umin = -10;
         end
     end
-    recovery_end_index = N;
-
     for k = 1:N
         if k == 1
             dt = t(1);
@@ -912,10 +904,16 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
         end
         y_meas = apply_attack_scalar(y_s, t(k), attack_cfg);
 
-        % After detection, trust the internal plant estimate rather than the
-        % attacked measurement so the controller can backtrack toward the setpoint.
+        % After detection, transition the controller feedback from the attacked
+        % measurement to the internal plant estimate over a short recovery window.
+        % This preserves recovery without the aggressive feedforward that caused
+        % the earlier overshoot/oscillation regression.
         if k < switch_index || ~isfinite(detection_time)
             y_ctrl = y_meas;
+        elseif t(k) <= detection_time + recovery_time
+            beta = (t(k) - detection_time) / max(eps, recovery_time);
+            beta = min(max(beta, 0), 1);
+            y_ctrl = (1 - beta) * y_meas + beta * yk;
         else
             y_ctrl = yk;
         end
@@ -971,19 +969,6 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
 
         % apply actuator limits and anti-windup: if clamped, skip PID integrator update
         uk = min(max(uk_unclamped, umin), umax);
-
-        % Recovery feedforward during the post-detection window to push the
-        % output toward the reference using the trusted measurement blend.
-        if k >= switch_index && k <= recovery_end_index && recovery_gain > 0
-            rec_scale = 1.0;
-            if recovery_end_index > switch_index
-                rec_scale = 1 - (t(k) - detection_time) / max(eps, (t(recovery_end_index) - detection_time));
-                rec_scale = min(max(rec_scale, 0), 1);
-            end
-            u_ff = rec_scale * recovery_gain * (r(k) - y_ctrl);
-            uk = uk + u_ff;
-            uk = min(max(uk, umin), umax);
-        end
 
         % integrate controller states
         if ~isempty(Ar)
