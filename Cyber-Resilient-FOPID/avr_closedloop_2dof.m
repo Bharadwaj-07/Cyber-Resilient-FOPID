@@ -127,7 +127,7 @@ for sidx = 1:size(seed_bank_1dof,1)
     opts_1dof.seed = seed_bank_1dof(sidx,:);
     if sidx == 2
         opts_1dof.n_particles = 80;
-        opts_1dof.max_iter = 150;
+        opts_1dof.max_iter = 100;
     else
         opts_1dof.n_particles = opts.n_particles;
         opts_1dof.max_iter = opts.max_iter;

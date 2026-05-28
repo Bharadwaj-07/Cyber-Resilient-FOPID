@@ -235,11 +235,28 @@ for i = 1:length(scenarios)
     save(fname, 'sc', 'y_true', 'y_meas', 'residuals', 'attack_flag', 'detection_time', 'detection_delay', 'u_res', 'mode_hist', 'switch_times', 'y_res', 'metrics');
     fprintf(lf, 'Saved results: %s\n', fname);
 
-    % plot
+    % plot - include measured (attacked) signal and mark attack start
     hf = figure('Visible','off');
-    subplot(3,1,1); plot(t, y_1dof_sc, 'c', t, y_2dof_sc, 'b', t, y_pid_sc, 'g', t, y_res, 'r'); legend('1DoF','2DoF','PID','Resilient'); title(['Outputs - ' sc.name]); grid on;
-    subplot(3,1,2); plot(t, residuals); title('Residuals'); grid on; if ~isnan(detection_time), xline(detection_time,'r--'); end
-    subplot(3,1,3); stairs(t, mode_hist); title('Mode history (resilient)'); ylim([0.5 3.5]); grid on;
+    subplot(3,1,1);
+    plot(t, y_1dof_sc, 'c', t, y_2dof_sc, 'b', t, y_pid_sc, 'g', t, y_res, 'r', t, y_meas, 'k--');
+    legend('1DoF','2DoF','PID','Resilient','y_{meas}');
+    title(['Outputs - ' sc.name]); grid on;
+    % mark attack start time if available
+    if isfield(attack_cfg,'start_time') && ~isempty(attack_cfg.start_time) && isfinite(attack_cfg.start_time)
+        xline(attack_cfg.start_time, 'm-.', 'Attack start');
+    end
+
+    subplot(3,1,2);
+    plot(t, residuals); title('Residuals'); grid on;
+    if ~isnan(detection_time), xline(detection_time,'r--','Detection'); end
+
+    subplot(3,1,3);
+    if isempty(mode_hist)
+        stairs(t, ones(size(t)));
+    else
+        stairs(t, mode_hist);
+    end
+    title('Mode history (resilient)'); ylim([0.5 3.5]); grid on;
     saveas(hf, fullfile(outdir, [sc.name '.png'])); close(hf);
 
     % Collect table row
