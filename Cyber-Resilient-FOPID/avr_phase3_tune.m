@@ -150,5 +150,3 @@ end
 
 fprintf('\nSuggested detector_config to use in Phase3: threshold_factor=%.2f, Q=%.1e, R=%.1e\n', best_cfg.threshold_factor, best_cfg.Q_scale*default_detector.Q, best_cfg.R_scale*default_detector.R);
 fprintf('Suggested switcher: hysteresis_time=%.2f, recovery_time=%.2f\n', best_cfg.hysteresis_time, best_cfg.recovery_time);
-
-end
