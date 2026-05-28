@@ -228,7 +228,7 @@ for i = 1:length(scenarios)
     dt_sim = t(2) - t(1);
     if ~isempty(switch_times)
         idx_sw = find(t >= switch_times(1,1), 1, 'first');
-        if isempty(idx_sw), idx_sw = N; end
+        if isempty(idx_sw), idx_sw = numel(t); end
         u_prev_sw = u_res(max(1, idx_sw-1));
         u_post_sw = u_res(min(N, idx_sw));
         u_jump = u_post_sw - u_prev_sw;
@@ -289,7 +289,13 @@ for i = 1:length(scenarios)
     title('Mode history (resilient)'); ylim([0.5 3.5]); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
     drawnow;
-    saveas(hf, fullfile(plotdir, [sc.name '.png']));
+    plotpath = fullfile(plotdir, [sc.name '.png']);
+    try
+        exportgraphics(hf, plotpath, 'Resolution', 150);
+    catch
+        saveas(hf, plotpath);
+    end
+    fprintf(lf, 'Saved plot: %s\n', plotpath);
 
     % Collect table row
     row = struct();
@@ -872,14 +878,6 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
     else
         blend_end_time = NaN; blend_end_index = N + 1;
     end
-    % compute recovery window indices
-    if isfinite(detection_time) && recovery_time > 0
-        recovery_end_time = detection_time + recovery_time;
-        recovery_end_index = find(t >= recovery_end_time, 1, 'first');
-        if isempty(recovery_end_index), recovery_end_index = min(N, switch_index + max(1, round(recovery_time / max(eps, t(2)-t(1))))); end
-    else
-        recovery_end_index = switch_index;
-    end
     % actuator limits
     if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'actuator_limits')
         umax = 10; umin = -10;
@@ -913,17 +911,13 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
         end
         y_meas = apply_attack_scalar(y_s, t(k), attack_cfg);
 
-        % After detection, progressively trust the internal plant estimate more than
-        % the attacked sensor. This backtracking step lets the controller recover
-        % toward the reference instead of chasing a corrupted measurement.
+        % After detection, trust the internal plant estimate rather than the
+        % attacked measurement so the controller can backtrack toward the setpoint.
         if k < switch_index || ~isfinite(detection_time)
-            meas_blend = 0;
-        elseif k <= recovery_end_index
-            meas_blend = min(max((t(k) - detection_time) / max(eps, recovery_time), 0), 1);
+            y_ctrl = y_meas;
         else
-            meas_blend = 1;
+            y_ctrl = yk;
         end
-        y_ctrl = (1 - meas_blend) * y_meas + meas_blend * yk;
 
         if k >= switch_index
             if mode ~= 2
