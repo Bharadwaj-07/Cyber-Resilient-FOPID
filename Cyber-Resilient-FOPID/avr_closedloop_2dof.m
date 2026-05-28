@@ -16,8 +16,10 @@ G_sen = tf(Ks, [Ts 1]);
 G_fwd = G_amp * G_exc * G_gen;
 
 % --- PSO options (use a wider search so 2DoF does not collapse to 1DoF) ---
-opts.n_particles = 40;
-opts.max_iter    = 150;
+opts.n_particles = 80;
+opts.max_iter    = 300;
+opts.local_refine = true;
+opts.local_maxiter = 300;
 opts.Tfinal      = max(Tfinal, 25);
 % Fractional operator settings (reduced order for stability)
 opts.frac.wb = 1e-3;

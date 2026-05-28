@@ -35,12 +35,14 @@ function [best_params, best_ITAE, history] = pso_tuner(G_plant, G_sensor, option
 
     % --- Default options ---
     if nargin < 3, options = struct(); end
-    n  = getopt(options, 'n_particles', 30);
-    MI = getopt(options, 'max_iter',   100);
+    n  = getopt(options, 'n_particles', 60);
+    MI = getopt(options, 'max_iter',   250);
     w  = getopt(options, 'w',          0.72);
     c1 = getopt(options, 'c1',         1.49);
     c2 = getopt(options, 'c2',         1.49);
     Tf = getopt(options, 'Tfinal',      10);
+    local_refine = getopt(options, 'local_refine', true);
+    local_maxiter = getopt(options, 'local_maxiter', 200);
     fixed_bc = getopt(options, 'fixed_bc', false);
     eval_cfg = getopt(options, 'eval', struct());
     eval_cfg = normalize_eval_cfg(eval_cfg);
@@ -135,6 +137,52 @@ function [best_params, best_ITAE, history] = pso_tuner(G_plant, G_sensor, option
         fprintf('Kp=%.4f Ki=%.4f Kd=%.4f lambda=%.4f mu=%.4f b=%.4f c=%.4f\n', ...
             gbest(1), gbest(2), gbest(3), gbest(4), gbest(5), gbest(6), gbest(7));
     end
+    % --- Optional local refinement (Nelder-Mead) ---
+    if local_refine
+        try
+            fprintf('Starting local refinement (Nelder–Mead)...\n');
+            if fixed_bc
+                x0 = gbest(1:5);
+                lb_loc = lb(1:5);
+                ub_loc = ub(1:5);
+                obj = @(x) evaluate_boxed(x, G_plant, G_sensor, t_eval, true, eval_cfg, frac_cfg, lb_loc, ub_loc);
+            else
+                x0 = gbest;
+                lb_loc = lb;
+                ub_loc = ub;
+                obj = @(x) evaluate_boxed(x, G_plant, G_sensor, t_eval, false, eval_cfg, frac_cfg, lb_loc, ub_loc);
+            end
+            fmopt = optimset('TolX',1e-4,'MaxIter',local_maxiter,'Display','off');
+            [xopt,fval,exitflag,output] = fminsearch(obj, x0, fmopt);
+            if fval < gbest_val
+                fprintf('Local refine improved ITAE: %.5f -> %.5f\n', gbest_val, fval);
+                gbest_val = fval;
+                gbest = project(xopt, lb_loc, ub_loc);
+            else
+                fprintf('Local refine did not improve best ITAE (%.5f).\n', gbest_val);
+            end
+        catch ME
+            fprintf('Local refinement failed: %s\n', ME.message);
+        end
+    end
+end
+
+% -----------------------------------------------------------------------
+function val = evaluate_boxed(x, G_plant, G_sensor, t, fixed_bc, eval_cfg, frac_cfg, lb, ub)
+    % Project into bounds then call evaluate_2dof_fopid
+    x = project(x, lb, ub);
+    % ensure vector length matches evaluate_2dof_fopid expectation
+    try
+        val = evaluate_2dof_fopid(x, G_plant, G_sensor, t, fixed_bc, eval_cfg, frac_cfg);
+    catch
+        val = 1e8;
+    end
+    if ~isfinite(val), val = 1e8; end
+end
+
+% -----------------------------------------------------------------------
+function x = project(x, lb, ub)
+    x = max(lb, min(ub, x));
 end
 
 % -----------------------------------------------------------------------
