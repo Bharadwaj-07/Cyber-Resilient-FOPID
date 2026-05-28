@@ -51,15 +51,17 @@ opts.bounds.ub   = [ ...
 
 % Seed PSO with PID-equivalent FOPID (lambda=mu=1, b=c=0.8)
 opts.seed = [Kp0, Ki0, Kd0, 1.0, 1.0, 0.8, 0.8];
-% Evaluation targets: encourage settling within 6s and rise within 2s
+% Evaluation targets: use a true ITAE objective for Phase 2 tuning; keep only
+% hard stability rejection in the tuner so the reported value is meaningful.
 opts.eval.settle_threshold = 0.02;
 opts.eval.max_settle       = 5;
 opts.eval.max_rise         = 1.5;
 opts.eval.settle_weight    = 50;
 opts.eval.rise_weight      = 20;
 opts.eval.ss_weight        = 200;
-opts.eval.target_os        = 6;
-opts.eval.os_weight        = 8;
+opts.eval.target_os        = [];
+opts.eval.os_weight        = 0;
+opts.eval.objective_mode   = 'itae_only';
 
 opts.w  = 0.72;
 opts.c1 = 1.49;
@@ -98,6 +100,9 @@ fprintf('ITAE:          %.5f\n', best_ITAE);
 opts_1dof = opts;
 opts_1dof.fixed_bc = true;
 opts_1dof.eval.target_os = 12;
+opts_1dof.eval.target_os = [];
+opts_1dof.eval.os_weight = 0;
+opts_1dof.eval.objective_mode = 'itae_only';
 opts_1dof.bounds.lb = [0.1*Kp0, 0.1*Ki0, 0.01*Kd0, 0.6, 0.6];
 opts_1dof.bounds.ub = [1.5*Kp0, 1.5*Ki0, 0.8*Kd0, 1.2, 1.2];
 opts_1dof.seed = [Kp0, Ki0, Kd0, 1.0, 1.0];

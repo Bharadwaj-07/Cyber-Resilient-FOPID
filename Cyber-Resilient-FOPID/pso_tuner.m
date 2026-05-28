@@ -26,6 +26,7 @@ function [best_params, best_ITAE, history] = pso_tuner(G_plant, G_sensor, option
 %                                  .settle_weight    (default 50)
 %                                  .rise_weight      (default 20)
 %                                  .ss_weight        (default 200)
+%                                  .objective_mode    (default 'itae_only')
 %
 %   Returns:
 %     best_params : [Kp Ki Kd lambda mu b c]
@@ -276,11 +277,15 @@ function cost = evaluate_2dof_fopid(params, G_plant, G_sensor, t, fixed_bc, eval
         % ---------------------------------------------------------
         % Final objective
         % ---------------------------------------------------------
-        cost = ITAE ...
-             + settle_penalty ...
-             + rise_penalty ...
-             + overshoot_penalty ...
-             + ss_penalty;
+        if strcmpi(eval_cfg.objective_mode, 'itae_only')
+            cost = ITAE;
+        else
+            cost = ITAE ...
+                 + settle_penalty ...
+                 + rise_penalty ...
+                 + overshoot_penalty ...
+                 + ss_penalty;
+        end
 
         if ~isfinite(cost)
             cost = LARGE;
@@ -314,6 +319,7 @@ function cfg = normalize_eval_cfg(cfg)
     if ~isfield(cfg, 'ss_weight'),        cfg.ss_weight = 200; end
     if ~isfield(cfg, 'target_os'),        cfg.target_os = []; end
     if ~isfield(cfg, 'os_weight'),        cfg.os_weight = 5; end
+    if ~isfield(cfg, 'objective_mode'),   cfg.objective_mode = 'itae_only'; end
     if ~isfield(cfg, 'debug'),            cfg.debug = false; end
 end
 
