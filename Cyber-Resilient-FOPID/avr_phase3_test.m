@@ -57,7 +57,8 @@ G_cl_pid = minreal(feedback(G_fwd * C_pid, G_sen));
 [y_true, ~] = step(G_cl_2dof, t);
 
 % Auto-apply best tuning config if available
-best_cfg_path = fullfile('results','results_tune_detector.mat');
+paths3 = phase_artifacts('phase3');
+best_cfg_path = fullfile(paths3.mat,'results_tune_detector.mat');
 if exist(best_cfg_path,'file')
     s = load(best_cfg_path,'best_cfg');
     best_cfg = s.best_cfg;

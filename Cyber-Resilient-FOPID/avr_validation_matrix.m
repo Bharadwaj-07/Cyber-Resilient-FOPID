@@ -4,8 +4,10 @@ function avr_validation_matrix(result_files)
 % If result_files not provided, loads 'results/phase3_all.mat'
 
 if nargin < 1 || isempty(result_files)
-    if exist('results/phase3_all.mat','file')
-        data = load('results/phase3_all.mat');
+    paths3 = phase_artifacts('phase3');
+    default_mat = fullfile(paths3.mat,'phase3_all.mat');
+    if exist(default_mat,'file')
+        data = load(default_mat);
         results = normalize_results(data.results);
     else
         error('No results found. Run avr_phase3_test.m first.');
@@ -48,8 +50,8 @@ for i = 1:n
 end
 
 try
-    outdir = fullfile('phase3_results','csv');
-    if ~exist(outdir,'dir'), mkdir(outdir); end
+    paths = phase_artifacts('phase3');
+    outdir = paths.csv;
     writetable(struct2table([rows{:}]), fullfile(outdir, 'phase3_validation_matrix.csv'));
 catch
 end

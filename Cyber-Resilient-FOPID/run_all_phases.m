@@ -15,6 +15,49 @@ AVR_SHARED_LOG_FID = runfid;
 AVR_SHARED_LOG_PATH = logfile;
 fprintf(runfid,'Run all phases log - %s\n', datestr(now));
 
+% Phase 1: validate plant
+try
+    if exist('avr_validate_plant.m','file')
+        fprintf('Running avr_validate_plant (Phase 1)...\n'); fprintf(runfid,'Running avr_validate_plant...\n');
+        avr_validate_plant();
+        fprintf(runfid,'avr_validate_plant completed\n');
+    else
+        fprintf(runfid,'avr_validate_plant not found - skipping Phase 1\n');
+    end
+catch ME
+    fprintf(runfid,'Phase1 failed: %s\n', ME.message);
+end
+
+% Phase 2: tuning and controller comparison
+try
+    if exist('avr_closedloop_2dof.m','file')
+        fprintf('Running avr_closedloop_2dof (Phase 2)...\n'); fprintf(runfid,'Running avr_closedloop_2dof...\n');
+        avr_closedloop_2dof();
+        fprintf(runfid,'avr_closedloop_2dof completed\n');
+        % comparison plot
+        if exist('avr_compare_controllers.m','file')
+            fprintf('Running avr_compare_controllers...\n'); fprintf(runfid,'Running avr_compare_controllers...\n');
+            avr_compare_controllers();
+            fprintf(runfid,'avr_compare_controllers completed\n');
+        end
+    else
+        fprintf(runfid,'avr_closedloop_2dof not found - skipping Phase 2\n');
+    end
+catch ME
+    fprintf(runfid,'Phase2 failed: %s\n', ME.message);
+end
+
+% Optional Phase3 tuning
+try
+    if exist('avr_phase3_tune.m','file')
+        fprintf('Running avr_phase3_tune (optional) ...\n'); fprintf(runfid,'Running avr_phase3_tune...\n');
+        avr_phase3_tune();
+        fprintf(runfid,'avr_phase3_tune completed\n');
+    end
+catch ME
+    fprintf(runfid,'Phase3 tuning failed: %s\n', ME.message);
+end
+
 % Phase 3: quick test (if exists)
 try
     if exist('phase3_quick_test.m','file')
@@ -31,6 +74,17 @@ end
 
 % Phase 3: full run
 try
+    % Ensure Phase 2 artifacts exist; auto-run Phase 2 if missing so Phase 3 has controllers
+    phase2mat = fullfile(phase_artifacts('phase2').mat, 'avr_phase2.mat');
+    if ~exist(phase2mat,'file')
+        fprintf(runfid, 'Phase 2 artifacts missing (%s). Auto-running avr_closedloop_2dof to generate them...\n', phase2mat);
+        try
+            avr_closedloop_2dof();
+            fprintf(runfid, 'Auto-ran avr_closedloop_2dof successfully.\n');
+        catch ME2
+            fprintf(runfid, 'Auto-run of Phase 2 failed: %s\n', ME2.message);
+        end
+    end
     if exist('phase3_full_run.m','file')
         fprintf('Running phase3_full_run...\n'); fprintf(runfid,'Running phase3_full_run...\n');
         phase3_full_run();

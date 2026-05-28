@@ -206,7 +206,7 @@ end
 if exist('csvfid','var') && csvfid > 0, fclose(csvfid); end
 if closeLog && exist('fidlog','var') && fidlog > 0, fclose(fidlog); end
 
-fprintf('Phase 3 full run complete. Results in %s\n', logdir);
+fprintf('Phase 3 full run complete. Results in %s\n', rootdir);
 
 % Helper
 function v = NaN2num(x)
