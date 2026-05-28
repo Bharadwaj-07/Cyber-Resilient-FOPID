@@ -140,6 +140,20 @@ try
                 phase5_grid_search_recovery();
                 fprintf(runfid,'phase5_grid_search_recovery completed\n');
                 run_summary(end+1,:) = {'phase5_grid_search_recovery','phase5_grid_search_recovery','ok'};
+                % After grid completes, pick best params automatically
+                if exist('phase5_apply_best_from_grid.m','file')
+                    try
+                        fprintf('Selecting best Phase5 config from grid results...\n'); fprintf(runfid,'Selecting best Phase5 config from grid results...\n');
+                        phase5_apply_best_from_grid();
+                        fprintf(runfid,'phase5 config selection completed\n');
+                        run_summary(end+1,:) = {'phase5_apply_best_from_grid','phase5_apply_best_from_grid','ok'};
+                    catch MEsel
+                        fprintf(runfid,'phase5_apply_best_from_grid failed: %s\n', MEsel.message);
+                        run_summary(end+1,:) = {'phase5_apply_best_from_grid','phase5_apply_best_from_grid','failed'};
+                    end
+                else
+                    fprintf(runfid,'phase5_apply_best_from_grid not found - skipping auto-selection\n');
+                end
             catch MEgs
                 fprintf(runfid,'phase5_grid_search_recovery failed: %s\n', MEgs.message);
                 run_summary(end+1,:) = {'phase5_grid_search_recovery','phase5_grid_search_recovery','failed'};

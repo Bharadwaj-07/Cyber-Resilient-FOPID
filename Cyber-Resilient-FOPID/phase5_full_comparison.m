@@ -140,8 +140,32 @@ detector_cfg = struct('baseline_window',5,'window_size',50,'threshold_factor',3,
 % to avoid abrupt control jumps during bumpless transfer. Expose a
 % bumpless_reg regularization parameter used when aligning controller state.
 switcher_cfg = struct('hysteresis_time',2,'blend_time',1.5,'recovery_time',2.0,'actuator_limits',[-5 5],'initial_mode',1);
-switcher_cfg.bumpless_reg = 1e-3;
+% Slightly stronger default regularization to avoid large alignment pushes
+switcher_cfg.bumpless_reg = 1e-2;
 switcher_cfg.heuristic_switching_enabled = false;
+
+% Allow user-provided overrides via a small config MAT file created by the
+% grid-search helper (phase5_config.mat). This avoids editing the script.
+cfgfile = fullfile(paths5.root, 'phase5_config.mat');
+if exist(cfgfile,'file')
+    try
+        c = load(cfgfile);
+        f = fieldnames(c);
+        for ii = 1:numel(f)
+            if isfield(switcher_cfg, f{ii})
+                switcher_cfg.(f{ii}) = c.(f{ii});
+            else
+                % allow detector_cfg overrides too
+                if isfield(detector_cfg, f{ii})
+                    detector_cfg.(f{ii}) = c.(f{ii});
+                end
+            end
+        end
+        fprintf(lf, 'Loaded Phase5 config overrides from %s\n', cfgfile);
+    catch MEcfg
+        fprintf(lf, 'Could not load %s: %s\n', cfgfile, MEcfg.message);
+    end
+end
 
 % Prepare results table
 rows = {};
