@@ -111,17 +111,36 @@ fprintf('ITAE:          %.5f\n', best_ITAE);
 % --- 1DoF comparison only (do not let it drive the main controller path) ---
 opts_1dof = opts;
 opts_1dof.fixed_bc = true;
-opts_1dof.eval.target_os = 12;
-opts_1dof.eval.target_os = [];
-opts_1dof.eval.os_weight = 0;
+opts_1dof.local_refine = true;
+opts_1dof.local_maxiter = 120;
+opts_1dof.n_particles = 50;
+opts_1dof.max_iter = 180;
 opts_1dof.eval.objective_mode = 'itae_only';
 opts_1dof.bounds.lb = [0.05*Kp0, 0.05*Ki0, 0.005*Kd0, 0.2, 0.2];
 opts_1dof.bounds.ub = [3.0*Kp0, 3.0*Ki0, 1.5*Kd0, 1.8, 1.8];
-opts_1dof.seed = [0.8*Kp0, 0.8*Ki0, 0.5*Kd0, 0.95, 0.95];
 
-tic;
-[best_params_1dof, best_ITAE_1dof, pso_history_1dof] = pso_tuner(G_fwd, G_sen, opts_1dof);
-elapsed_1dof = toc;
+% Multi-start only for the 1DoF comparison so we can push it closer to a
+% competitive classical baseline without changing the main 2DoF search.
+seed_bank_1dof = [
+    0.80*Kp0, 0.80*Ki0, 0.50*Kd0, 0.95, 0.95;
+    1.10*Kp0, 1.10*Ki0, 0.75*Kd0, 1.10, 1.10;
+    1.40*Kp0, 1.40*Ki0, 1.00*Kd0, 1.20, 1.20];
+
+best_ITAE_1dof = inf;
+best_params_1dof = [];
+pso_history_1dof = [];
+elapsed_1dof = 0;
+for sidx = 1:size(seed_bank_1dof,1)
+    opts_1dof.seed = seed_bank_1dof(sidx,:);
+    tic;
+    [cand_params_1dof, cand_ITAE_1dof, cand_history_1dof] = pso_tuner(G_fwd, G_sen, opts_1dof);
+    elapsed_1dof = elapsed_1dof + toc;
+    if cand_ITAE_1dof < best_ITAE_1dof
+        best_ITAE_1dof = cand_ITAE_1dof;
+        best_params_1dof = cand_params_1dof;
+        pso_history_1dof = cand_history_1dof;
+    end
+end
 fprintf('1DoF tuning time: %.1f s\n', elapsed_1dof);
 
 Kp1  = best_params_1dof(1);  Ki1  = best_params_1dof(2);  Kd1  = best_params_1dof(3);

@@ -2,7 +2,8 @@
 % Auto-tune detector parameters (threshold_factor, Q_scale, R_scale)
 % Produces results/results_tune_detector.mat with tuning grid and chosen best config
 
-clearvars; close all; clc;
+% Preserve caller workspace state when invoked from run_all_phases.
+close all; clc;
 
 % Load parameters and Phase 2 results
 avr_parameters;
