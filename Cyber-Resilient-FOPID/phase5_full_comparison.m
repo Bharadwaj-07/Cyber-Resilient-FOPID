@@ -889,6 +889,7 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
             umax = 10; umin = -10;
         end
     end
+    recovery_end_index = N;
 
     for k = 1:N
         if k == 1
