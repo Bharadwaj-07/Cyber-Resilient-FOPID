@@ -10,7 +10,8 @@ plotdir = paths5.plots;
 matdir = paths5.mat;
 csvdir = paths5.csv;
 logdir = paths5.logs;
-staleCsvs = {fullfile(outdir, 'phase5_comparison.csv'), fullfile(outdir, 'phase5_anomaly_summary.csv')};
+staleCsvs = {fullfile(outdir, 'phase5_comparison.csv'), fullfile(outdir, 'phase5_anomaly_summary.csv'), ...
+             fullfile(csvdir, 'phase5_comparison.csv'), fullfile(csvdir, 'phase5_anomaly_summary.csv')};
 for iStale = 1:numel(staleCsvs)
     if exist(staleCsvs{iStale}, 'file')
         delete(staleCsvs{iStale});
@@ -135,7 +136,7 @@ scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency
 % Use a tighter detector here so Phase 5 separates attack cases earlier and
 % reduces quantized detection times in the anomaly summary.
 detector_cfg = struct('baseline_window',5,'window_size',50,'threshold_factor',3,'Q',1e-6,'R',1e-4,'min_consecutive',3,'startup_suppress',4.8,'confidence_cap',10);
-switcher_cfg = struct('hysteresis_time',2,'recovery_time',0.5,'initial_mode',1);
+switcher_cfg = struct('hysteresis_time',2,'blend_time',1.0,'recovery_time',3.0,'recovery_gain',3.0,'actuator_limits',[-10 10],'initial_mode',1);
     switcher_cfg.heuristic_switching_enabled = false;
 
 % Prepare results table
@@ -253,8 +254,8 @@ for i = 1:length(scenarios)
     infoP = safe_stepinfo(y_pid_sc, t);
     infoR = safe_stepinfo(y_res, t);
 
-    % Save per-scenario MAT and plot
-    fname = fullfile(outdir, [sc.name '.mat']);
+    % Save per-scenario MAT and plot in the phase-specific artifact folders
+    fname = fullfile(matdir, [sc.name '.mat']);
     save(fname, 'sc', 'y_true', 'y_meas', 'residuals', 'attack_flag', 'detection_time', 'detection_delay', 'u_res', 'mode_hist', 'switch_times', 'y_res', 'metrics');
     fprintf(lf, 'Saved results: %s\n', fname);
 
@@ -288,7 +289,7 @@ for i = 1:length(scenarios)
     title('Mode history (resilient)'); ylim([0.5 3.5]); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
     drawnow;
-    saveas(hf, fullfile(outdir, [sc.name '.png']));
+    saveas(hf, fullfile(plotdir, [sc.name '.png']));
 
     % Collect table row
     row = struct();
@@ -912,6 +913,18 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
         end
         y_meas = apply_attack_scalar(y_s, t(k), attack_cfg);
 
+        % After detection, progressively trust the internal plant estimate more than
+        % the attacked sensor. This backtracking step lets the controller recover
+        % toward the reference instead of chasing a corrupted measurement.
+        if k < switch_index || ~isfinite(detection_time)
+            meas_blend = 0;
+        elseif k <= recovery_end_index
+            meas_blend = min(max((t(k) - detection_time) / max(eps, recovery_time), 0), 1);
+        else
+            meas_blend = 1;
+        end
+        y_ctrl = (1 - meas_blend) * y_meas + meas_blend * yk;
+
         if k >= switch_index
             if mode ~= 2
                 switch_times(end+1,:) = [t(k), mode, 2]; %#ok<AGROW>
@@ -919,7 +932,7 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
                 % Bumpless transfer: initialize PID state so the output matches
                 % the control effort already being applied by the 2DoF controller.
                 if nx_pidx > 0
-                    epid_now = r(k) - y_meas;
+                    epid_now = r(k) - y_ctrl;
                     xpid = align_controller_state(Cpid_ss, epid_now, u_prev, xpid);
                     % If the aligned PID output differs hugely from current effort,
                     % dampen integrator states to avoid immediate large jumps.
@@ -940,8 +953,8 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
         % Always update both controller internal states so outputs are ready
         % for blending and to avoid state freezes when inactive.
         ur = Crm * xr + Dr * r(k);
-        uy = Cym * xy + Dy * y_meas;
-        epid = r(k) - y_meas;
+        uy = Cym * xy + Dy * y_ctrl;
+        epid = r(k) - y_ctrl;
         pid_out = Cpm * xpid + Dp * epid;
 
         % Determine blending alpha (0 = 2DoF only, 1 = PID only)
@@ -961,31 +974,20 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
         % blended control: uk = (1-alpha)*(ur - uy) + alpha * pid_out
         uk_unclamped = (1 - alpha) * (ur - uy) + alpha * pid_out;
 
-        % Recovery feedforward during immediate post-detection window to push output
-        % back toward reference and avoid long integrator windup.
-        if k >= switch_index && k <= recovery_end_index && recovery_gain > 0
-            rec_scale = 1.0;
-            if recovery_end_index > switch_index
-                rec_scale = 1 - (t(k) - detection_time) / max(eps, (t(recovery_end_index) - detection_time));
-                rec_scale = min(max(rec_scale, 0), 1);
-            end
-            u_ff = rec_scale * recovery_gain * (r(k) - y_meas);
-            uk_unclamped = uk_unclamped + u_ff;
-        end
-
         % apply actuator limits and anti-windup: if clamped, skip PID integrator update
         uk = min(max(uk_unclamped, umin), umax);
 
-        % Recovery feedforward during immediate post-detection window to push output
-        % back toward reference and avoid long integrator windup-driven drift.
+        % Recovery feedforward during the post-detection window to push the
+        % output toward the reference using the trusted measurement blend.
         if k >= switch_index && k <= recovery_end_index && recovery_gain > 0
             rec_scale = 1.0;
             if recovery_end_index > switch_index
                 rec_scale = 1 - (t(k) - detection_time) / max(eps, (t(recovery_end_index) - detection_time));
                 rec_scale = min(max(rec_scale, 0), 1);
             end
-            u_ff = rec_scale * recovery_gain * (r(k) - y_meas);
+            u_ff = rec_scale * recovery_gain * (r(k) - y_ctrl);
             uk = uk + u_ff;
+            uk = min(max(uk, umin), umax);
         end
 
         % integrate controller states
@@ -993,7 +995,7 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
             xr = xr + (Ar * xr + Br * r(k)) * dt;
         end
         if ~isempty(Ay)
-            xy = xy + (Ay * xy + By * y_meas) * dt;
+            xy = xy + (Ay * xy + By * y_ctrl) * dt;
         end
         % anti-windup: skip PID integrator update when actuator is saturated
         if ~isempty(Ap)

@@ -1,7 +1,0 @@
-phase,script_name,status
-phase1,avr_validate_plant,ok
-phase2,avr_closedloop_2dof,ok
-phase3_tune,avr_phase3_tune,failed
-phase3_quick_test,phase3_quick_test,ok
-phase3_full_run,phase3_full_run,ok
-phase5_full_comparison,phase5_full_comparison,failed
