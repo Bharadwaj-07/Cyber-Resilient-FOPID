@@ -29,6 +29,7 @@ if ~isfield(switcher_config,'detector_attack_flag'), switcher_config.detector_at
 if ~isfield(switcher_config,'detector_attack_time'), switcher_config.detector_attack_time = NaN; end
 if ~isfield(switcher_config,'persist_state_history'), switcher_config.persist_state_history = false; end
 if ~isfield(switcher_config,'heuristic_switching_enabled'), switcher_config.heuristic_switching_enabled = true; end
+if ~isfield(switcher_config,'bumpless_reg'), switcher_config.bumpless_reg = 1e-4; end
 
 t = t(:); y_meas = y_meas(:); r_ref = r_ref(:);
 N = length(t);
@@ -233,7 +234,7 @@ for k = 1:N
                 if ~isempty(Cp) && any(Cp(:))
                     try
                         % Regularized least-squares for bumpless alignment
-                        reg = 1e-6;
+                        reg = switcher_config.bumpless_reg;
                         Ct = Cp';
                         G = Ct * Cp + reg * eye(size(Cp,2));
                         rhs = Ct * (u_prev - Dp * ek);
@@ -262,7 +263,7 @@ for k = 1:N
             % adjust PID state to avoid jump
                     if ~isempty(Cp) && any(Cp(:))
                     try
-                        reg = 1e-6; Ct = Cp'; G = Ct * Cp + reg * eye(size(Cp,2)); rhs = Ct * (y2 - Dp * ek); xp = G \ rhs;
+                        reg = switcher_config.bumpless_reg; Ct = Cp'; G = Ct * Cp + reg * eye(size(Cp,2)); rhs = Ct * (y2 - Dp * ek); xp = G \ rhs;
                         if exist('lf','var') && lf>0, fprintf(lf,'Performed regularized bumpless adjust on PID at t=%.4f (metric switch)\n', t(k)); end
                     catch ME
                         if exist('lf','var') && lf>0, fprintf(lf,'Bumpless adjust (PID) failed at t=%.4f: %s\n', t(k), ME.message); end

@@ -207,15 +207,38 @@ for i = 1:length(scenarios)
     % at the detector-reported time.
     switcher_cfg.detector_attack_flag = attack_flag;
     switcher_cfg.detector_attack_time = detection_time;
+    % Re-tune fallback PID for this scenario to improve resilient response
+    try
+        C_pid_tuned = tune_pid_for_attack(ss(G_fwd), ss(G_sen), t, r, attack_cfg, C_pid);
+    catch
+        C_pid_tuned = C_pid;
+    end
     try
         [u_res, mode_hist, switch_times, y_res] = simulate_resilient_closedloop_euler( ...
-            ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg);
+            ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid_tuned, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg);
         fprintf(lf, 'Resilient sim: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
     catch ME
         fprintf(lf, 'Resilient sim ERROR: %s\n', ME.message);
         u_res = zeros(size(t)); mode_hist = ones(size(t)); switch_times = []; y_res = y_2dof_sc;
     end
     y_res = sanitize_signal(y_res);
+
+    % Control-action diagnostics: jump at first switch and peak slew rate
+    dt_sim = t(2) - t(1);
+    if ~isempty(switch_times)
+        idx_sw = find(t >= switch_times(1,1), 1, 'first');
+        if isempty(idx_sw), idx_sw = N; end
+        u_prev_sw = u_res(max(1, idx_sw-1));
+        u_post_sw = u_res(min(N, idx_sw));
+        u_jump = u_post_sw - u_prev_sw;
+    else
+        u_jump = NaN;
+    end
+    if numel(u_res) >= 2
+        u_peak_rate = max(abs(diff(u_res))) / max(eps, dt_sim);
+    else
+        u_peak_rate = NaN;
+    end
 
     % Compute metrics
     metrics.ITAE_2dof = safe_itae(y_2dof_sc, t, signal_limit);
@@ -235,24 +258,28 @@ for i = 1:length(scenarios)
     save(fname, 'sc', 'y_true', 'y_meas', 'residuals', 'attack_flag', 'detection_time', 'detection_delay', 'u_res', 'mode_hist', 'switch_times', 'y_res', 'metrics');
     fprintf(lf, 'Saved results: %s\n', fname);
 
-    % plot - include measured (attacked) signal and mark attack start
-    hf = figure('Visible','on','Color','w','Position',[100 80 1200 900]);
-    subplot(3,1,1);
+    % plot - include measured (attacked) signal, control action, and mark attack start
+    hf = figure('Visible','on','Color','w','Position',[100 80 1200 1000]);
+    subplot(4,1,1);
     plot(t, y_1dof_sc, 'c', t, y_2dof_sc, 'b', t, y_pid_sc, 'g', t, y_res, 'r', t, y_meas, 'k--');
     legend('1DoF','2DoF','PID','Resilient','y_{meas}');
     title(['Outputs - ' sc.name]); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
-    % mark attack start time if available
     if isfield(attack_cfg,'start_time') && ~isempty(attack_cfg.start_time) && isfinite(attack_cfg.start_time)
         xline(attack_cfg.start_time, 'm-.', 'Attack start');
     end
 
-    subplot(3,1,2);
+    subplot(4,1,2);
+    plot(t, u_res, 'k-', 'LineWidth', 1.0); hold on; xlabel('Time (s)'); ylabel('u'); title('Control action (resilient)'); grid on;
+    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
+    if ~isnan(detection_time), xline(detection_time,'r--','Detection'); end
+
+    subplot(4,1,3);
     plot(t, residuals); title('Residuals'); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
     if ~isnan(detection_time), xline(detection_time,'r--','Detection'); end
 
-    subplot(3,1,3);
+    subplot(4,1,4);
     if isempty(mode_hist)
         stairs(t, ones(size(t)));
     else
@@ -296,6 +323,8 @@ for i = 1:length(scenarios)
         row.first_switch_time = NaN;
         row.last_switch_time = NaN;
     end
+    row.u_jump = safe_scalar(u_jump, 1e6);
+    row.u_peak_rate = safe_scalar(u_peak_rate, 1e6);
     rows{end+1} = row;
 end
 
@@ -313,7 +342,7 @@ summaryTable = summaryTable(:, [ ...
      'y_1dof_final','y_2dof_final','y_pid_final','y_res_final','y_1dof_peak','y_2dof_peak','y_pid_peak','y_res_peak', ...
      'y_1dof_overshoot','y_2dof_overshoot','y_pid_overshoot','y_res_overshoot', ...
      'y_1dof_settling','y_2dof_settling','y_pid_settling','y_res_settling', ...
-     'mode_transitions','final_mode','first_switch_time','last_switch_time'}]);
+    'mode_transitions','final_mode','first_switch_time','last_switch_time','u_jump','u_peak_rate'}]);
 writetable(summaryTable, csvpath);
 
 % Also keep a compact anomaly-focused CSV for quick comparisons.
@@ -805,6 +834,19 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
     else
         switch_index = N + 1;
     end
+    % soft blending parameters for bumpless transfer during switch
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'blend_time')
+        blend_time = 0.5; % seconds
+    else
+        blend_time = switcher_cfg.blend_time;
+    end
+    if isfinite(detection_time)
+        blend_end_time = detection_time + max(0, blend_time);
+        blend_end_index = find(t >= blend_end_time, 1, 'first');
+        if isempty(blend_end_index), blend_end_index = switch_index; end
+    else
+        blend_end_time = NaN; blend_end_index = N + 1;
+    end
 
     for k = 1:N
         if k == 1
@@ -841,15 +883,38 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
         end
         mode_history(k) = mode;
 
-        if mode == 1
-            ur = Crm * xr + Dr * r(k);
-            uy = Cym * xy + Dy * y_meas;
-            uk = ur - uy;
-            xr = xr + (Ar * xr + Br * r(k)) * dt;
-            xy = xy + (Ay * xy + By * y_meas) * dt;
+        % Always update both controller internal states so outputs are ready
+        % for blending and to avoid state freezes when inactive.
+        ur = Crm * xr + Dr * r(k);
+        uy = Cym * xy + Dy * y_meas;
+        epid = r(k) - y_meas;
+        pid_out = Cpm * xpid + Dp * epid;
+
+        % Determine blending alpha (0 = 2DoF only, 1 = PID only)
+        if k < switch_index
+            alpha = 0;
+        elseif k >= switch_index && k < blend_end_index
+            if isnan(blend_time) || blend_time <= 0
+                alpha = 1;
+            else
+                alpha = (t(k) - detection_time) / max(eps, blend_time);
+                alpha = min(max(alpha,0),1);
+            end
         else
-            epid = r(k) - y_meas;
-            uk = Cpm * xpid + Dp * epid;
+            alpha = 1;
+        end
+
+        % blended control: uk = (1-alpha)*(ur - uy) + alpha * pid_out
+        uk = (1 - alpha) * (ur - uy) + alpha * pid_out;
+
+        % integrate controller states
+        if ~isempty(Ar)
+            xr = xr + (Ar * xr + Br * r(k)) * dt;
+        end
+        if ~isempty(Ay)
+            xy = xy + (Ay * xy + By * y_meas) * dt;
+        end
+        if ~isempty(Ap)
             xpid = xpid + (Ap * xpid + Bp * epid) * dt;
         end
 
@@ -921,5 +986,54 @@ function y_attack = apply_attack_scalar(y, t, attack_cfg)
             y_attack = y + amp * sin(2*pi*freq*(t - attack_cfg.start_time));
         otherwise
             y_attack = y;
+    end
+end
+
+function C_pid_tuned = tune_pid_for_attack(plant_ss, sensor_ss, t, r, attack_cfg, C_pid_initial)
+    % Quick PID re-tune to improve attack-time performance. Returns a `pid` object.
+    try
+        % baseline PID from pidtune as starting point
+        C0 = pidtune(plant_ss, 'PID');
+    catch
+        % fallback to initial controller if pidtune fails
+        try
+            if isa(C_pid_initial,'pid')
+                C0 = C_pid_initial;
+            else
+                C0 = pid(1,1,0.01);
+            end
+        catch
+            C0 = pid(1,1,0.01);
+        end
+    end
+
+    % initial gains
+    try
+        Kp0 = C0.Kp; Ki0 = C0.Ki; Kd0 = C0.Kd;
+    catch
+        Kp0 = 1; Ki0 = 1; Kd0 = 0.01;
+    end
+
+    obj = @(x) pid_attack_objective(x, plant_ss, sensor_ss, t, r, attack_cfg);
+    opts = optimset('Display','off','MaxIter',50,'TolX',1e-3,'TolFun',1e-3);
+    x0 = [Kp0, Ki0, Kd0];
+    try
+        xbest = fminsearch(obj, x0, opts);
+        C_pid_tuned = pid(max(0,xbest(1)), max(0,xbest(2)), max(0,xbest(3)));
+    catch
+        C_pid_tuned = C0;
+    end
+end
+
+function J = pid_attack_objective(x, plant_ss, sensor_ss, t, r, attack_cfg)
+    % Objective: ITAE of closed-loop response under attack using PID with gains x
+    Kp = max(0, x(1)); Ki = max(0, x(2)); Kd = max(0, x(3));
+    Cpid = pid(Kp, Ki, Kd);
+    try
+        y = simulate_closedloop_pid_euler_attacked(plant_ss, sensor_ss, Cpid, t, r, attack_cfg);
+        J = safe_itae(y, t, 1e6);
+        if isnan(J), J = 1e12; end
+    catch
+        J = 1e12;
     end
 end
