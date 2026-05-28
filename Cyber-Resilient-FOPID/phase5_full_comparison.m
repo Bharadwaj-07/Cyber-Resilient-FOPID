@@ -84,7 +84,7 @@ end
 
 % Time base and reference
 Tfinal = 25; dt = 0.01; t = (0:dt:Tfinal)'; r = ones(size(t));
-signal_cap = 5;            % expected AVR output is around 1 pu; cap protects metrics from unstable traces
+signal_limit = 1e4;        % guardrail for clearly divergent traces; does not clip normal outputs
 residual_sigma_floor = 1e-3; % avoids inflated peak/sigma when baseline residual is nearly zero
 
 % Baseline 2DoF/PID closed-loop responses using stable state-space Euler
@@ -111,10 +111,13 @@ catch ME
     y_pid = zeros(size(t));
 end
 
-% Sanitize nominal traces so unstable-but-finite blowups do not poison metrics.
-y_1dof = sanitize_signal(y_1dof, signal_cap);
-y_2dof = sanitize_signal(y_2dof, signal_cap);
-y_pid = sanitize_signal(y_pid, signal_cap);
+% Sanitize nominal traces so non-finite samples do not poison metrics.
+y_1dof = sanitize_signal(y_1dof);
+y_2dof = sanitize_signal(y_2dof);
+y_pid = sanitize_signal(y_pid);
+y_1dof_nominal = y_1dof;
+y_2dof_nominal = y_2dof;
+y_pid_nominal = y_pid;
 
 % Attack scenarios (Phase 5 matrix requires at least bias, ramp, sine)
 scenarios = {};
@@ -126,7 +129,7 @@ scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency
 % Detector & switcher defaults for the validation matrix.
 % Use a tighter detector here so Phase 5 separates attack cases earlier and
 % reduces quantized detection times in the anomaly summary.
-detector_cfg = struct('baseline_window',5,'window_size',40,'threshold_factor',2,'Q',1e-6,'R',1e-4,'min_consecutive',1,'startup_suppress',4.5,'confidence_cap',10);
+detector_cfg = struct('baseline_window',5,'window_size',50,'threshold_factor',3,'Q',1e-6,'R',1e-4,'min_consecutive',3,'startup_suppress',4.8,'confidence_cap',10);
 switcher_cfg = struct('hysteresis_time',2,'recovery_time',0.5,'initial_mode',1);
     switcher_cfg.heuristic_switching_enabled = false;
 
@@ -135,21 +138,42 @@ rows = {};
 
 for i = 1:length(scenarios)
     sc = scenarios{i};
-    % Generate attacked measurement from 2DoF baseline output
-    y_true = y_2dof;
+    % Build attack configuration once and run each controller under the same attack.
     attack_cfg = struct('enabled',true,'type',sc.type);
     if isfield(sc,'magnitude'), attack_cfg.magnitude = sc.magnitude; end
     if isfield(sc,'slope'), attack_cfg.slope = sc.slope; end
     if isfield(sc,'frequency'), attack_cfg.frequency = sc.frequency; end
     attack_cfg.start_time = sc.start_time;
 
-    y_meas = avr_attack_injector(y_true, t, attack_cfg);
-
-    % Run detector against the known nominal baseline used to generate y_true.
-    % This keeps Phase 5 focused on validation of the attack matrix rather than
-    % on model-mismatch effects between the Euler baseline and TF-based observer.
     try
-        [attack_flag, confidence, detection_time, residuals] = direct_baseline_detector(y_meas, y_true, t, detector_cfg);
+        [y_2dof_sc, y_meas] = simulate_closedloop_2dof_euler_attacked(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, t, r, attack_cfg);
+    catch ME
+        fprintf(lf, '2DoF attacked sim ERROR: %s\n', ME.message);
+        y_2dof_sc = y_2dof_nominal;
+        y_meas = avr_attack_injector(y_2dof_sc, t, attack_cfg);
+    end
+    try
+        y_1dof_sc = simulate_closedloop_2dof_euler_attacked(ss(G_fwd), ss(G_sen), C_r_1dof, C_y_1dof, t, r, attack_cfg);
+    catch ME
+        fprintf(lf, '1DoF attacked sim ERROR: %s\n', ME.message);
+        y_1dof_sc = y_1dof_nominal;
+    end
+    try
+        y_pid_sc = simulate_closedloop_pid_euler_attacked(ss(G_fwd), ss(G_sen), C_pid, t, r, attack_cfg);
+    catch ME
+        fprintf(lf, 'PID attacked sim ERROR: %s\n', ME.message);
+        y_pid_sc = y_pid_nominal;
+    end
+
+    y_2dof_sc = sanitize_signal(y_2dof_sc);
+    y_1dof_sc = sanitize_signal(y_1dof_sc);
+    y_pid_sc = sanitize_signal(y_pid_sc);
+    y_meas = sanitize_signal(y_meas);
+    y_true = y_2dof_sc;
+
+    % Run detector against nominal 2DoF baseline to estimate attack onset.
+    try
+        [attack_flag, confidence, detection_time, residuals] = direct_baseline_detector(y_meas, y_2dof_nominal, t, detector_cfg);
     catch ME
         fprintf(lf, 'Detector ERROR: %s\n', ME.message);
         attack_flag = false; confidence = NaN; detection_time = NaN; residuals = zeros(size(t));
@@ -174,34 +198,31 @@ for i = 1:length(scenarios)
     residual_peak_to_sigma = residual_abs_max / residual_baseline_sigma;
     threshold = detector_cfg.threshold_factor * residual_baseline_sigma;
 
-    % Resilient run: simulate plant + controller in closed loop using the
-    % detector timestamp as the switch point. For Phase 5, use a stitched
-    % response from the nominal 2DoF trace before detection and the PID
-    % trace after detection. This is numerically stable and preserves the
-    % detector-driven switching semantics without a stiff custom integrator.
+    % Resilient run: full closed-loop simulation switching from 2DoF to PID
+    % at the detector-reported time.
     switcher_cfg.detector_attack_flag = attack_flag;
     switcher_cfg.detector_attack_time = detection_time;
     try
-        [u_res, mode_hist, switch_times, y_res] = simulate_resilient_piecewise_response( ...
-            y_2dof, y_pid, t, attack_cfg, attack_flag, detection_time, switcher_cfg);
+        [u_res, mode_hist, switch_times, y_res] = simulate_resilient_closedloop_euler( ...
+            ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg);
         fprintf(lf, 'Resilient sim: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
     catch ME
         fprintf(lf, 'Resilient sim ERROR: %s\n', ME.message);
-        u_res = zeros(size(t)); mode_hist = zeros(size(t)); switch_times = []; y_res = y_2dof;
+        u_res = zeros(size(t)); mode_hist = ones(size(t)); switch_times = []; y_res = y_2dof_sc;
     end
-    y_res = sanitize_signal(y_res, signal_cap);
+    y_res = sanitize_signal(y_res);
 
     % Compute metrics
-    metrics.ITAE_2dof = safe_itae(y_2dof, t, signal_cap);
-    metrics.ITAE_1dof = safe_itae(y_1dof, t, signal_cap);
-    metrics.ITAE_pid = safe_itae(y_pid, t, signal_cap);
-    metrics.ITAE_res = safe_itae(y_res, t, signal_cap);
+    metrics.ITAE_2dof = safe_itae(y_2dof_sc, t, signal_limit);
+    metrics.ITAE_1dof = safe_itae(y_1dof_sc, t, signal_limit);
+    metrics.ITAE_pid = safe_itae(y_pid_sc, t, signal_limit);
+    metrics.ITAE_res = safe_itae(y_res, t, signal_limit);
     metrics.delta_ITAE_res_1dof = metrics.ITAE_res - metrics.ITAE_1dof;
     metrics.delta_ITAE_res_pid = metrics.ITAE_res - metrics.ITAE_pid;
     metrics.delta_ITAE_res_2dof = metrics.ITAE_res - metrics.ITAE_2dof;
 
-    info2 = safe_stepinfo(y_2dof, t);
-    infoP = safe_stepinfo(y_pid, t);
+    info2 = safe_stepinfo(y_2dof_sc, t);
+    infoP = safe_stepinfo(y_pid_sc, t);
     infoR = safe_stepinfo(y_res, t);
 
     % Save per-scenario MAT and plot
@@ -211,7 +232,7 @@ for i = 1:length(scenarios)
 
     % plot
     hf = figure('Visible','off');
-    subplot(3,1,1); plot(t, y_1dof, 'c', t, y_2dof, 'b', t, y_pid, 'g', t, y_res, 'r'); legend('1DoF','2DoF','PID','Resilient'); title(['Outputs - ' sc.name]); grid on;
+    subplot(3,1,1); plot(t, y_1dof_sc, 'c', t, y_2dof_sc, 'b', t, y_pid_sc, 'g', t, y_res, 'r'); legend('1DoF','2DoF','PID','Resilient'); title(['Outputs - ' sc.name]); grid on;
     subplot(3,1,2); plot(t, residuals); title('Residuals'); grid on; if ~isnan(detection_time), xline(detection_time,'r--'); end
     subplot(3,1,3); stairs(t, mode_hist); title('Mode history (resilient)'); ylim([0.5 3.5]); grid on;
     saveas(hf, fullfile(outdir, [sc.name '.png'])); close(hf);
@@ -234,10 +255,10 @@ for i = 1:length(scenarios)
     row.delta_ITAE_res_1dof = metrics.delta_ITAE_res_1dof;
     row.delta_ITAE_res_pid = metrics.delta_ITAE_res_pid;
     row.delta_ITAE_res_2dof = metrics.delta_ITAE_res_2dof;
-    row.y1dof_final = safe_scalar(y_1dof(end), signal_cap); row.y2dof_final = safe_scalar(y_2dof(end), signal_cap); row.y_pid_final = safe_scalar(y_pid(end), signal_cap); row.y_res_final = safe_scalar(y_res(end), signal_cap);
-    row.y1dof_peak = safe_scalar(max(y_1dof), signal_cap);
-    row.y2dof_peak = safe_scalar(max(y_2dof), signal_cap); row.y_pid_peak = safe_scalar(max(y_pid), signal_cap); row.y_res_peak = safe_scalar(max(y_res), signal_cap);
-    info1 = safe_stepinfo(y_1dof, t);
+    row.y1dof_final = safe_scalar(y_1dof_sc(end), signal_limit); row.y2dof_final = safe_scalar(y_2dof_sc(end), signal_limit); row.y_pid_final = safe_scalar(y_pid_sc(end), signal_limit); row.y_res_final = safe_scalar(y_res(end), signal_limit);
+    row.y1dof_peak = safe_scalar(max(y_1dof_sc), signal_limit);
+    row.y2dof_peak = safe_scalar(max(y_2dof_sc), signal_limit); row.y_pid_peak = safe_scalar(max(y_pid_sc), signal_limit); row.y_res_peak = safe_scalar(max(y_res), signal_limit);
+    info1 = safe_stepinfo(y_1dof_sc, t);
     row.y1dof_overshoot = info1.Overshoot; row.y2dof_overshoot = info2.Overshoot; row.y_pid_overshoot = infoP.Overshoot; row.y_res_overshoot = infoR.Overshoot;
     row.y2dof_settling = info2.SettlingTime; row.y_pid_settling = infoP.SettlingTime; row.y_res_settling = infoR.SettlingTime;
     row.y1dof_settling = info1.SettlingTime;
@@ -311,8 +332,8 @@ function v = NaN2num(x)
     if isempty(x) || isnan(x), v = NaN; else v = x; end
 end
 
-function y = sanitize_signal(y, cap)
-    % Clamp outliers and replace non-finite samples with previous valid value.
+function y = sanitize_signal(y)
+    % Replace non-finite samples with the previous valid value.
     y = y(:);
     y(~isfinite(y)) = NaN;
     if all(isnan(y))
@@ -330,14 +351,15 @@ function y = sanitize_signal(y, cap)
             y(k) = y(k-1);
         end
     end
-
-    y = max(min(y, cap), -cap);
 end
 
 function info = safe_stepinfo(y, t)
     % Return finite step metrics when possible, otherwise NaN placeholders.
     info = struct('Overshoot', NaN, 'SettlingTime', NaN);
     try
+        if any(~isfinite(y)) || max(abs(y)) > 1e4
+            return;
+        end
         raw = stepinfo(y, t);
         if isfield(raw, 'Overshoot') && isfinite(raw.Overshoot)
             info.Overshoot = raw.Overshoot;
@@ -352,9 +374,11 @@ end
 
 function val = safe_itae(y, t, cap)
     % Bounded ITAE to avoid exploding values from unstable trajectories.
+    if any(~isfinite(y)) || max(abs(y)) > cap
+        val = NaN;
+        return;
+    end
     e = abs(1 - y(:));
-    e(~isfinite(e)) = cap;
-    e = min(e, cap);
     val = trapz(t(:), t(:) .* e);
     if ~isfinite(val)
         val = NaN;
@@ -362,11 +386,11 @@ function val = safe_itae(y, t, cap)
 end
 
 function v = safe_scalar(x, cap)
-    if ~isfinite(x)
+    if ~isfinite(x) || abs(x) > cap
         v = NaN;
         return;
     end
-    v = max(min(x, cap), -cap);
+    v = x;
 end
 
 function y = simulate_ss_euler(sys, input, t)
@@ -455,6 +479,99 @@ function y = simulate_closedloop_pid_euler(plant_ss, C_pid, t, r)
         xp = xp + (A * xp + B * u) * dt;
         y(k) = C * xp + D * u;
         u_prev = u;
+    end
+end
+
+function [y, y_meas_hist] = simulate_closedloop_2dof_euler_attacked(plant_ss, sensor_ss, C_r, C_y, t, r, attack_cfg)
+    % Closed-loop 2DoF simulation with attack injected on the measured signal.
+    plant_ss = ss(plant_ss);
+    sensor_ss = ss(sensor_ss);
+    A = plant_ss.A; B = plant_ss.B; C = plant_ss.C; D = plant_ss.D;
+    As = sensor_ss.A; Bs = sensor_ss.B; Cs = sensor_ss.C; Ds = sensor_ss.D;
+
+    Cr_ss = safe_controller_ss(C_r, plant_ss);
+    Cy_ss = safe_controller_ss(C_y, plant_ss);
+    Ar = Cr_ss.A; Br = Cr_ss.B; Crm = Cr_ss.C; Dr = Cr_ss.D;
+    Ay = Cy_ss.A; By = Cy_ss.B; Cym = Cy_ss.C; Dy = Cy_ss.D;
+
+    nx_p = size(A,1); nx_s = size(As,1); nx_r = size(Ar,1); nx_y = size(Ay,1);
+    xp = zeros(nx_p,1); xs = zeros(nx_s,1); xr = zeros(nx_r,1); xy = zeros(nx_y,1);
+
+    N = length(t);
+    y = zeros(N,1);
+    y_meas_hist = zeros(N,1);
+    u_prev = 0;
+
+    for k = 1:N
+        if k == 1
+            dt = t(1);
+        else
+            dt = t(k) - t(k-1);
+        end
+
+        yk = C * xp + D * u_prev;
+        if nx_s > 0
+            y_s = Cs * xs + Ds * yk;
+            xs = xs + (As * xs + Bs * yk) * dt;
+        else
+            y_s = yk;
+        end
+        y_meas = apply_attack_scalar(y_s, t(k), attack_cfg);
+
+        ur = Crm * xr + Dr * r(k);
+        uy = Cym * xy + Dy * y_meas;
+        uk = ur - uy;
+
+        xr = xr + (Ar * xr + Br * r(k)) * dt;
+        xy = xy + (Ay * xy + By * y_meas) * dt;
+        xp = xp + (A * xp + B * uk) * dt;
+
+        y(k) = C * xp + D * uk;
+        y_meas_hist(k) = y_meas;
+        u_prev = uk;
+    end
+end
+
+function y = simulate_closedloop_pid_euler_attacked(plant_ss, sensor_ss, C_pid, t, r, attack_cfg)
+    % Closed-loop PID simulation with attack injected on the measured signal.
+    plant_ss = ss(plant_ss);
+    sensor_ss = ss(sensor_ss);
+    A = plant_ss.A; B = plant_ss.B; C = plant_ss.C; D = plant_ss.D;
+    As = sensor_ss.A; Bs = sensor_ss.B; Cs = sensor_ss.C; Ds = sensor_ss.D;
+
+    Cc_ss = safe_controller_ss(C_pid, plant_ss);
+    Ac = Cc_ss.A; Bc = Cc_ss.B; Cc = Cc_ss.C; Dc = Cc_ss.D;
+
+    nx_p = size(A,1); nx_s = size(As,1); nx_c = size(Ac,1);
+    xp = zeros(nx_p,1); xs = zeros(nx_s,1); xc = zeros(nx_c,1);
+
+    N = length(t);
+    y = zeros(N,1);
+    u_prev = 0;
+
+    for k = 1:N
+        if k == 1
+            dt = t(1);
+        else
+            dt = t(k) - t(k-1);
+        end
+
+        yk = C * xp + D * u_prev;
+        if nx_s > 0
+            y_s = Cs * xs + Ds * yk;
+            xs = xs + (As * xs + Bs * yk) * dt;
+        else
+            y_s = yk;
+        end
+        y_meas = apply_attack_scalar(y_s, t(k), attack_cfg);
+        e = r(k) - y_meas;
+        uk = Cc * xc + Dc * e;
+
+        xc = xc + (Ac * xc + Bc * e) * dt;
+        xp = xp + (A * xp + B * uk) * dt;
+
+        y(k) = C * xp + D * uk;
+        u_prev = uk;
     end
 end
 
