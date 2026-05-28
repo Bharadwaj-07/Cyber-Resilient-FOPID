@@ -236,11 +236,12 @@ for i = 1:length(scenarios)
     fprintf(lf, 'Saved results: %s\n', fname);
 
     % plot - include measured (attacked) signal and mark attack start
-    hf = figure('Visible','off');
+    hf = figure('Visible','on','Color','w','Position',[100 80 1200 900]);
     subplot(3,1,1);
     plot(t, y_1dof_sc, 'c', t, y_2dof_sc, 'b', t, y_pid_sc, 'g', t, y_res, 'r', t, y_meas, 'k--');
     legend('1DoF','2DoF','PID','Resilient','y_{meas}');
     title(['Outputs - ' sc.name]); grid on;
+    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
     % mark attack start time if available
     if isfield(attack_cfg,'start_time') && ~isempty(attack_cfg.start_time) && isfinite(attack_cfg.start_time)
         xline(attack_cfg.start_time, 'm-.', 'Attack start');
@@ -248,6 +249,7 @@ for i = 1:length(scenarios)
 
     subplot(3,1,2);
     plot(t, residuals); title('Residuals'); grid on;
+    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
     if ~isnan(detection_time), xline(detection_time,'r--','Detection'); end
 
     subplot(3,1,3);
@@ -257,7 +259,9 @@ for i = 1:length(scenarios)
         stairs(t, mode_hist);
     end
     title('Mode history (resilient)'); ylim([0.5 3.5]); grid on;
-    saveas(hf, fullfile(outdir, [sc.name '.png'])); close(hf);
+    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
+    drawnow;
+    saveas(hf, fullfile(outdir, [sc.name '.png']));
 
     % Collect table row
     row = struct();
@@ -413,6 +417,18 @@ function v = safe_scalar(x, cap)
         return;
     end
     v = x;
+end
+
+function shade_attack_window(ax, attack_start, attack_end, faceColor, faceAlpha)
+    if ~isfinite(attack_start) || ~isfinite(attack_end) || attack_end <= attack_start
+        return;
+    end
+    axes(ax); %#ok<LAXES>
+    yl = ylim(ax);
+    hold(ax, 'on');
+    hBand = patch(ax, [attack_start attack_end attack_end attack_start], [yl(1) yl(1) yl(2) yl(2)], faceColor, ...
+        'FaceAlpha', faceAlpha, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    uistack(hBand, 'bottom');
 end
 
 function y = simulate_ss_euler(sys, input, t)

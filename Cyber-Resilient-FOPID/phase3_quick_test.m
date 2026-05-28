@@ -104,33 +104,45 @@ try
     fclose(fidcsv);
 
     % Plots
-    hf = figure('Name','Phase3 Quick Test','Visible','off','Color','w');
+    hf = figure('Name','Phase3 Quick Test','Visible','on','Color','w','Position',[100 80 1200 900]);
     tiledlayout(3,1,'Padding','compact','TileSpacing','compact');
     nexttile;
     plot(t, r_ref, '--k', 'LineWidth', 1); hold on;
     plot(t, y_true, 'b', 'LineWidth', 1.2);
     plot(t, y_meas, 'r', 'LineWidth', 1.0);
+    attack_signal = y_meas - y_true;
+    attack_signal(~isfinite(attack_signal)) = 0;
+    shade_attack_window(gca, attack_config.start_time, t(end), [0.65 0.80 1.0], 0.18);
     legend('r_{ref}','y_{true}','y_{meas}','Location','best');
-    title('Reference and outputs'); grid on;
+    if isfield(attack_config,'start_time') && isfinite(attack_config.start_time)
+        xline(attack_config.start_time, 'b-.', 'Attack start');
+    end
+    title('Reference, true output, and attacked measurement'); grid on;
 
     nexttile;
     plot(t, residuals, 'k', 'LineWidth', 1); hold on;
+    shade_attack_window(gca, attack_config.start_time, t(end), [0.65 0.80 1.0], 0.18);
     if ~isnan(detection_time)
         xline(detection_time, 'r--', 'LineWidth', 1.5);
     end
-    ylabel('Residual'); grid on; title('Residual and detection');
+    plot(t, attack_signal, 'Color',[0.85 0.33 0.10], 'LineWidth', 1.0);
+    if isfield(attack_config,'start_time') && isfinite(attack_config.start_time)
+        xline(attack_config.start_time, 'b-.', 'Attack start');
+    end
+    ylabel('Residual / Attack'); grid on; title('Residual and injection overlay');
 
     nexttile;
     Jk = abs(residuals) + movmean(abs(residuals), detector_config.window_size);
     plot(t, Jk, 'm', 'LineWidth', 1); hold on;
+    shade_attack_window(gca, attack_config.start_time, t(end), [0.65 0.80 1.0], 0.18);
     idx_baseline_end = find(t <= detector_config.baseline_window, 1, 'last');
     sigma = std(residuals(1:idx_baseline_end));
     threshold = detector_config.threshold_factor * max(sigma, 1e-6);
     yline(threshold, 'r--', 'LineWidth', 1.5);
     legend('J_k','threshold','Location','best'); grid on; title('Detection metric');
 
+    drawnow;
     saveas(hf, fullfile(plotdir, ['results_phase3_quick_' run_ts '.png']));
-    close(hf);
 
     fprintf('\n--- Quick test results ---\n');
     fprintf('Attack flag: %d\n', attack_flag);
@@ -150,4 +162,16 @@ if exist('lf','var') && closeLog, fprintf(lf,'Run complete\n'); fclose(lf); end
 
 function v = NaN2num(x)
     if isempty(x) || isnan(x), v = NaN; else v = x; end
+end
+
+function shade_attack_window(ax, attack_start, attack_end, faceColor, faceAlpha)
+    if ~isfinite(attack_start) || ~isfinite(attack_end) || attack_end <= attack_start
+        return;
+    end
+    axes(ax); %#ok<LAXES>
+    yl = ylim(ax);
+    hold(ax, 'on');
+    hBand = patch(ax, [attack_start attack_end attack_end attack_start], [yl(1) yl(1) yl(2) yl(2)], faceColor, ...
+        'FaceAlpha', faceAlpha, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    uistack(hBand, 'bottom');
 end
