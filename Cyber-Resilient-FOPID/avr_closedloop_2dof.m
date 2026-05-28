@@ -15,11 +15,11 @@ G_gen = tf(Kg, [Tg 1]);
 G_sen = tf(Ks, [Ts 1]);
 G_fwd = G_amp * G_exc * G_gen;
 
-% --- PSO options (use a wider search so 2DoF does not collapse to 1DoF) ---
-opts.n_particles = 80;
-opts.max_iter    = 300;
-opts.local_refine = true;
-opts.local_maxiter = 300;
+% --- PSO options (2DoF is the primary tuned controller per roadmap) ---
+opts.n_particles = 40;
+opts.max_iter    = 150;
+opts.local_refine = false;
+opts.local_maxiter = 0;
 opts.Tfinal      = max(Tfinal, 25);
 % Fractional operator settings (reduced order for stability)
 opts.frac.wb = 1e-3;
@@ -71,56 +71,11 @@ opts.w  = 0.72;
 opts.c1 = 1.49;
 opts.c2 = 1.49;
 
-% --- Run tuner (multi-start to avoid local traps) ---
-% Slightly relax bounds to give 2DoF room to outperform PID
-if isfield(opts, 'bounds')
-    lb = opts.bounds.lb;
-    ub = opts.bounds.ub;
-    % expand ub by 20% (within reasonable limits)
-    ub = lb + 1.2*(ub - lb);
-else
-    lb = [];
-    ub = [];
-end
-opts.bounds.lb = lb; opts.bounds.ub = ub;
-
-n_restarts_2d = getopt(opts, 'n_restarts_2d', 6);
-best_ITAE = inf;
-best_params = [];
-best_hist = [];
-best_time = 0;
-for r = 1:n_restarts_2d
-    if r == 1 && isfield(opts, 'seed') && ~isempty(opts.seed)
-        seed_r = opts.seed;
-    else
-        rng('shuffle');
-        if ~isempty(lb)
-            seed_r = lb + rand(1, numel(lb)) .* (ub - lb);
-        else
-            seed_r = [];
-        end
-    end
-    opts_run = opts;
-    opts_run.seed = seed_r;
-    fprintf('\n2DoF restart %d/%d\n', r, n_restarts_2d);
-    tic;
-    [params_r, itae_r, hist_r] = pso_tuner(G_fwd, G_sen, opts_run);
-    t_r = toc;
-    fprintf('  Restart %d result: ITAE=%.5f (time %.1f s)\n', r, itae_r, t_r);
-    if itae_r < best_ITAE
-        best_ITAE = itae_r;
-        best_params = params_r;
-        best_hist = hist_r;
-        best_time = t_r;
-    end
-end
-if isempty(best_params)
-    error('2DoF PSO failed to return valid parameters');
-end
-best_ITAE = best_ITAE;
-pso_history = best_hist;
-elapsed = best_time;
-fprintf('2DoF best ITAE after restarts: %.5f\n', best_ITAE);
+% --- Run tuner ---
+tic;
+[best_params, best_ITAE, pso_history] = pso_tuner(G_fwd, G_sen, opts);
+elapsed = toc;
+fprintf('2DoF tuning time: %.1f s\n', elapsed);
 
 % --- Unpack results ---
 Kp  = best_params(1);  Ki  = best_params(2);  Kd  = best_params(3);
@@ -145,7 +100,7 @@ fprintf('Settling time: %.4f s\n', info_2dof.SettlingTime);
 fprintf('Overshoot:     %.2f %%\n', info_2dof.Overshoot);
 fprintf('ITAE:          %.5f\n', best_ITAE);
 
-% --- 1DoF tuning (b=c=1) for fair comparison ---
+% --- 1DoF comparison only (do not let it drive the main controller path) ---
 opts_1dof = opts;
 opts_1dof.fixed_bc = true;
 opts_1dof.eval.target_os = 12;
@@ -156,41 +111,9 @@ opts_1dof.bounds.lb = [0.05*Kp0, 0.05*Ki0, 0.005*Kd0, 0.2, 0.2];
 opts_1dof.bounds.ub = [3.0*Kp0, 3.0*Ki0, 1.5*Kd0, 1.8, 1.8];
 opts_1dof.seed = [0.8*Kp0, 0.8*Ki0, 0.5*Kd0, 0.95, 0.95];
 
-% Multi-start PSO for 1DoF: try several restarts and keep the best ITAE
-n_restarts = getopt(opts_1dof, 'n_restarts', 6);
-best_ITAE_1dof = inf;
-best_params_1dof = [];
-best_hist_1dof = [];
-best_elapsed = 0;
-lb1 = opts_1dof.bounds.lb; ub1 = opts_1dof.bounds.ub;
-for r = 1 : n_restarts
-    if r == 1 && isfield(opts_1dof, 'seed') && ~isempty(opts_1dof.seed)
-        seed_r = opts_1dof.seed;
-    else
-        rng('shuffle');
-        seed_r = lb1 + rand(1, numel(lb1)) .* (ub1 - lb1);
-    end
-    opts_run = opts_1dof;
-    opts_run.seed = seed_r;
-    fprintf('\n1DoF restart %d/%d: seed = [', r, n_restarts);
-    fprintf(' %.3g', seed_r);
-    fprintf(' ]\n');
-    tic;
-    [params_r, itae_r, hist_r] = pso_tuner(G_fwd, G_sen, opts_run);
-    elapsed_r = toc;
-    fprintf('  Restart %d ITAE = %.5f (time %.1f s)\n', r, itae_r, elapsed_r);
-    if itae_r < best_ITAE_1dof
-        best_ITAE_1dof = itae_r;
-        best_params_1dof = params_r;
-        best_hist_1dof = hist_r;
-        best_elapsed = elapsed_r;
-    end
-end
-if isempty(best_params_1dof)
-    error('1DoF PSO failed to return any valid result');
-end
-pso_history_1dof = best_hist_1dof;
-elapsed_1dof = best_elapsed;
+tic;
+[best_params_1dof, best_ITAE_1dof, pso_history_1dof] = pso_tuner(G_fwd, G_sen, opts_1dof);
+elapsed_1dof = toc;
 fprintf('1DoF tuning time: %.1f s\n', elapsed_1dof);
 
 Kp1  = best_params_1dof(1);  Ki1  = best_params_1dof(2);  Kd1  = best_params_1dof(3);

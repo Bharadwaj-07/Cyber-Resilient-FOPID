@@ -1,6 +1,8 @@
 % run_all_phases.m
-% Master runner: executes Phase 3 quick/full, Phase 4 checks, Phase 5 comparison,
-% collects logs and generates summary plots. Writes results to results/run_all/
+% Master runner: executes the full roadmap chain end-to-end.
+% Phase 1 -> Phase 2 -> Phase 3 tuning/test -> Phase 5 comparison.
+% Phase 4 is exercised through avr_switcher during Phase 5.
+% Writes results to results/run_all/
 
 addpath(pwd);
 outRoot = fullfile('results','run_all'); if ~exist(outRoot,'dir'), mkdir(outRoot); end
@@ -15,17 +17,22 @@ AVR_SHARED_LOG_FID = runfid;
 AVR_SHARED_LOG_PATH = logfile;
 fprintf(runfid,'Run all phases log - %s\n', datestr(now));
 
+run_summary = {};
+
 % Phase 1: validate plant
 try
     if exist('avr_validate_plant.m','file')
         fprintf('Running avr_validate_plant (Phase 1)...\n'); fprintf(runfid,'Running avr_validate_plant...\n');
         avr_validate_plant();
         fprintf(runfid,'avr_validate_plant completed\n');
+        run_summary(end+1,:) = {'phase1','avr_validate_plant','ok'};
     else
         fprintf(runfid,'avr_validate_plant not found - skipping Phase 1\n');
+        run_summary(end+1,:) = {'phase1','avr_validate_plant','missing'};
     end
 catch ME
     fprintf(runfid,'Phase1 failed: %s\n', ME.message);
+    run_summary(end+1,:) = {'phase1','avr_validate_plant','failed'};
 end
 
 % Phase 2: tuning and controller comparison
@@ -34,6 +41,7 @@ try
         fprintf('Running avr_closedloop_2dof (Phase 2)...\n'); fprintf(runfid,'Running avr_closedloop_2dof...\n');
         avr_closedloop_2dof();
         fprintf(runfid,'avr_closedloop_2dof completed\n');
+        run_summary(end+1,:) = {'phase2','avr_closedloop_2dof','ok'};
         % comparison plot
         if exist('avr_compare_controllers.m','file')
             fprintf('Running avr_compare_controllers...\n'); fprintf(runfid,'Running avr_compare_controllers...\n');
@@ -42,37 +50,44 @@ try
         end
     else
         fprintf(runfid,'avr_closedloop_2dof not found - skipping Phase 2\n');
+        run_summary(end+1,:) = {'phase2','avr_closedloop_2dof','missing'};
     end
 catch ME
     fprintf(runfid,'Phase2 failed: %s\n', ME.message);
+    run_summary(end+1,:) = {'phase2','avr_closedloop_2dof','failed'};
 end
 
-% Optional Phase3 tuning
+% Phase 3 tuning (detector/switcher calibration)
 try
     if exist('avr_phase3_tune.m','file')
-        fprintf('Running avr_phase3_tune (optional) ...\n'); fprintf(runfid,'Running avr_phase3_tune...\n');
+        fprintf('Running avr_phase3_tune (Phase 3 tune)...\n'); fprintf(runfid,'Running avr_phase3_tune...\n');
         avr_phase3_tune();
         fprintf(runfid,'avr_phase3_tune completed\n');
+        run_summary(end+1,:) = {'phase3_tune','avr_phase3_tune','ok'};
     end
 catch ME
     fprintf(runfid,'Phase3 tuning failed: %s\n', ME.message);
+    run_summary(end+1,:) = {'phase3_tune','avr_phase3_tune','failed'};
 end
 
-% Phase 3: quick test (if exists)
+% Phase 3 quick smoke test
 try
     if exist('phase3_quick_test.m','file')
         fprintf('Running phase3_quick_test...\n'); fprintf(runfid,'Running phase3_quick_test...\n');
         phase3_quick_test();
         fprintf(runfid,'phase3_quick_test completed\n');
+        run_summary(end+1,:) = {'phase3_quick_test','phase3_quick_test','ok'};
     else
         fprintf(runfid,'phase3_quick_test not found - skipping\n'); fprintf(runfid,'phase3_quick_test not found - skipping\n');
+        run_summary(end+1,:) = {'phase3_quick_test','phase3_quick_test','missing'};
     end
 catch ME
     fprintf('Phase3 quick test failed: %s\n', ME.message);
     fprintf(runfid,'Phase3 quick test failed: %s\n', ME.message);
+    run_summary(end+1,:) = {'phase3_quick_test','phase3_quick_test','failed'};
 end
 
-% Phase 3: full run
+% Phase 3 full validation run
 try
     % Ensure Phase 2 artifacts exist; auto-run Phase 2 if missing so Phase 3 has controllers
     phase2mat = fullfile(phase_artifacts('phase2').mat, 'avr_phase2.mat');
@@ -89,24 +104,30 @@ try
         fprintf('Running phase3_full_run...\n'); fprintf(runfid,'Running phase3_full_run...\n');
         phase3_full_run();
         fprintf(runfid,'phase3_full_run completed\n'); fprintf(runfid,'phase3_full_run completed\n');
+        run_summary(end+1,:) = {'phase3_full_run','phase3_full_run','ok'};
     else
         fprintf('phase3_full_run not found - skipping\n'); fprintf(runfid,'phase3_full_run not found - skipping\n');
+        run_summary(end+1,:) = {'phase3_full_run','phase3_full_run','missing'};
     end
 catch ME
     fprintf('Phase3 full run failed: %s\n', ME.message); fprintf(runfid,'Phase3 full run failed: %s\n', ME.message);
+    run_summary(end+1,:) = {'phase3_full_run','phase3_full_run','failed'};
 end
 
-% Phase 5: full comparison
+% Phase 5: full comparison and resilient validation (Phase 4 is exercised here)
 try
     if exist('phase5_full_comparison.m','file')
         fprintf('Running phase5_full_comparison...\n'); fprintf(runfid,'Running phase5_full_comparison...\n');
         phase5_full_comparison();
         fprintf(runfid,'phase5_full_comparison completed\n'); fprintf(runfid,'phase5_full_comparison completed\n');
+        run_summary(end+1,:) = {'phase5_full_comparison','phase5_full_comparison','ok'};
     else
         fprintf('phase5_full_comparison not found - skipping\n'); fprintf(runfid,'phase5_full_comparison not found - skipping\n');
+        run_summary(end+1,:) = {'phase5_full_comparison','phase5_full_comparison','missing'};
     end
 catch ME
     fprintf('Phase5 full comparison failed: %s\n', ME.message); fprintf(runfid,'Phase5 full comparison failed: %s\n', ME.message);
+    run_summary(end+1,:) = {'phase5_full_comparison','phase5_full_comparison','failed'};
 end
 
 % Collect Phase4 state history files if present
@@ -147,6 +168,16 @@ if exist(csvpath,'file')
     catch ME
         warning('Could not create phase5 ITAE plot: %s', ME.message);
     end
+end
+
+try
+    if ~isempty(run_summary)
+        Tsum = cell2table(run_summary, 'VariableNames', {'phase','script_name','status'});
+        writetable(Tsum, fullfile(outRoot, 'run_all_summary.csv'));
+        save(fullfile(outRoot, 'run_all_summary.mat'), 'Tsum');
+    end
+catch ME
+    warning('Could not write run_all summary: %s', ME.message);
 end
 
 fprintf('All done. Logs and artifacts in results/run_all and results/phase5 if available.\n');

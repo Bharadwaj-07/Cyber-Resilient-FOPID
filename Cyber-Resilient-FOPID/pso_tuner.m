@@ -35,13 +35,13 @@ function [best_params, best_ITAE, history] = pso_tuner(G_plant, G_sensor, option
 
     % --- Default options ---
     if nargin < 3, options = struct(); end
-    n  = getopt(options, 'n_particles', 60);
-    MI = getopt(options, 'max_iter',   250);
+    n  = getopt(options, 'n_particles', 30);
+    MI = getopt(options, 'max_iter',   100);
     w  = getopt(options, 'w',          0.72);
     c1 = getopt(options, 'c1',         1.49);
     c2 = getopt(options, 'c2',         1.49);
     Tf = getopt(options, 'Tfinal',      10);
-    local_refine = getopt(options, 'local_refine', true);
+    local_refine = getopt(options, 'local_refine', false);
     local_maxiter = getopt(options, 'local_maxiter', 200);
     fixed_bc = getopt(options, 'fixed_bc', false);
     eval_cfg = getopt(options, 'eval', struct());
