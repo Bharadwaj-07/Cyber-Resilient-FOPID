@@ -3,7 +3,7 @@
 % - Loads parameters and controllers (prefers avr_phase2.mat)
 % - Runs baseline responses
 % - Executes multiple attack scenarios
-% - Runs detector and switcher for each scenario
+% - Runs detector-only evaluation for each scenario
 % - Logs results to CSV and MAT, produces summary plots
 
 timestamp = datestr(now,'yyyymmdd_HHMMSS');
@@ -108,12 +108,6 @@ try
     detector_config.min_consecutive = 7;    % consecutive samples
     detector_config.startup_suppress = 6;
 
-    % Switcher config
-    switcher_config = struct();
-    switcher_config.hysteresis_time = 2.0;
-    switcher_config.recovery_time = 0.5;
-    switcher_config.initial_mode = 1;
-
     % Define attack scenarios
     scenarios = {};
     sid = 0;
@@ -130,7 +124,7 @@ try
 
     % Prepare CSV
     csvfid = fopen(csvfile,'w');
-    fprintf(csvfid,'scenario_id,attack_type,attack_magnitude,attack_slope,attack_frequency,attack_start_time,attack_detected,detection_time,detection_delay,confidence,mode_transitions,final_mode\n');
+    fprintf(csvfid,'scenario_id,attack_type,attack_magnitude,attack_slope,attack_frequency,attack_start_time,attack_detected,detection_time,detection_delay,confidence,residual_rms,residual_peak\n');
 
     results = struct(); results.scenarios = scenarios; results.runs = {};
 
@@ -157,33 +151,22 @@ try
         [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_cl, r_ref, detector_config);
         detection_delay = NaN; if ~isnan(detection_time), detection_delay = detection_time - attack_config.start_time; end
 
-        % Switcher run (simulate controller outputs and modes)
-        try
-            switcher_config.heuristic_switching_enabled = false;
-            switcher_config.detector_attack_flag = attack_flag;
-            switcher_config.detector_attack_time = detection_time;
-            [u, mode_history, switch_times] = avr_switcher(y_meas, t, r_ref, C_2dof_r, C_2dof_y, C_pid, switcher_config);
-        catch ME
-            warning('Switcher failed: %s', ME.message);
-            u = zeros(size(t)); mode_history = ones(size(t)); switch_times = [];
-        end
-
-        mode_transitions = size(switch_times,1);
-        final_mode = mode_history(end);
+        residual_rms = sqrt(mean(residuals.^2));
+        residual_peak = max(abs(residuals));
 
         % Save run result
         runres = struct();
         runres.scenario = sc; runres.attack_type = sc.type; runres.attack_config = attack_config; runres.attack_flag = attack_flag;
         runres.confidence = confidence; runres.detection_time = detection_time; runres.detection_delay = detection_delay;
-        runres.mode_transitions = mode_transitions; runres.final_mode = final_mode; runres.switch_times = switch_times;
-        runres.t = t; runres.y_true = y_true; runres.y_meas = y_meas; runres.residuals = residuals; runres.u = u; runres.mode_history = mode_history;
+        runres.residual_rms = residual_rms; runres.residual_peak = residual_peak;
+        runres.t = t; runres.y_true = y_true; runres.y_meas = y_meas; runres.residuals = residuals;
 
         results.runs{end+1} = runres;
 
         % Log to CSV
-        fprintf(csvfid,'%d,%s,%.4f,%.4f,%.4f,%.3f,%d,%.4f,%.4f,%.6g,%d,%d\n', ...
+        fprintf(csvfid,'%d,%s,%.4f,%.4f,%.4f,%.3f,%d,%.4f,%.4f,%.6g,%.6g,%.6g\n', ...
             sc.id, sc.type, field_or_default(sc,'magnitude',NaN), field_or_default(sc,'slope',NaN), field_or_default(sc,'frequency',NaN), ...
-            sc.start_time, double(attack_flag), NaN2num(detection_time), NaN2num(detection_delay), confidence, mode_transitions, final_mode);
+            sc.start_time, double(attack_flag), NaN2num(detection_time), NaN2num(detection_delay), confidence, residual_rms, residual_peak);
 
         % Plot per-run figure using the shared clean Phase 3 plot layout.
         try
@@ -193,7 +176,7 @@ try
             warning('Scenario plot failed: %s', ME.message);
         end
 
-        fprintf(fidlog, 'Scenario %d: detected=%d, detection_time=%.3f, delay=%.3f, mode_trans=%d, final_mode=%d\n', sc.id, attack_flag, NaN2num(detection_time), NaN2num(detection_delay), mode_transitions, final_mode);
+        fprintf(fidlog, 'Scenario %d: detected=%d, detection_time=%.3f, delay=%.3f, residual_rms=%.4f, residual_peak=%.4f\n', sc.id, attack_flag, NaN2num(detection_time), NaN2num(detection_delay), residual_rms, residual_peak);
     end
 
     % Save results

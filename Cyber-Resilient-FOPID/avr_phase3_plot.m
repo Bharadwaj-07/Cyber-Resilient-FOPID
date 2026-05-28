@@ -20,8 +20,8 @@ end
 if isfield(r,'y_meas'), y_meas = r.y_meas; else y_meas = r.y_true; end
 if isfield(r,'residuals'), residuals = r.residuals; else residuals = zeros(size(t)); end
 if isfield(r,'detection_time'), dt = r.detection_time; else dt = NaN; end
-if isfield(r,'mode_history'), mode_history = r.mode_history; else mode_history = ones(size(t)); end
-if isfield(r,'u_switched'), u = r.u_switched; else u = zeros(size(t)); end
+if isfield(r,'residual_peak'), residual_peak = r.residual_peak; else residual_peak = NaN; end
+if isfield(r,'residual_rms'), residual_rms = r.residual_rms; else residual_rms = NaN; end
 
 hf = figure('Units','normalized','Position',[0.08 0.08 0.84 0.74],'Color','w','Visible','off');
 tiledlayout(3,1,'Padding','compact','TileSpacing','compact');
@@ -31,21 +31,21 @@ plot(t, r.y_true, 'k-', 'LineWidth', 1.4); hold on;
 plot(t, y_meas, 'r-', 'LineWidth', 1.0);
 yline(1.0, 'k:');
 if ~isnan(dt), xline(dt, 'm--', 'Detection'); end
-legend('y_{true}','y_{meas}','Setpoint','Detection','Location','best');
+legend('y_{true}','y_{meas}','Setpoint','Location','best');
 title(sprintf('Phase 3 output: %s', r.attack_type));
 xlabel('Time (s)'); ylabel('V_t (pu)'); grid on;
 
 nexttile;
 plot(t, residuals, 'b-', 'LineWidth', 1.0); hold on; yline(0,'k:');
 if ~isnan(dt), xline(dt,'m--','Detection'); end
-title('Residual'); xlabel('Time (s)'); ylabel('Residual'); grid on;
+title(sprintf('Residual | rms=%.4g | peak=%.4g', residual_rms, residual_peak)); xlabel('Time (s)'); ylabel('Residual'); grid on;
 
 nexttile;
-plot(t, u, 'g-', 'LineWidth', 1.0); hold on;
-stairs(t, mode_history, 'k--', 'LineWidth', 1.0);
+Jk = abs(residuals) + movmean(abs(residuals), max(5, round(0.05 / max(t(2)-t(1), eps))));
+plot(t, Jk, 'g-', 'LineWidth', 1.0); hold on;
 if ~isnan(dt), xline(dt,'m--','Detection'); end
-legend('u (control)','mode','Location','best');
-title('Control and mode history'); xlabel('Time (s)'); ylabel('u / mode'); grid on;
+legend('Detection metric','Location','best');
+title('Detection metric'); xlabel('Time (s)'); ylabel('J_k'); grid on;
 
 sgtitle(sprintf('Attack: %s | det=%s', r.attack_type, num2str(dt)));
 if nargin >= 2 && ~isempty(outname)
