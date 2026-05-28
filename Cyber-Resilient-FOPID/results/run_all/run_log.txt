@@ -1,0 +1,44 @@
+Run all phases log - 28-May-2026 12:21:28
+Running avr_validate_plant...
+avr_validate_plant completed
+Running avr_closedloop_2dof...
+avr_closedloop_2dof completed
+Running avr_compare_controllers...
+avr_compare_controllers completed
+Running avr_phase3_tune...
+Phase3 tuning failed: Undefined function 'zn_pid' for input arguments of type 'tf'.
+Running phase3_quick_test...
+Phase3 quick run log - 28-May-2026 12:25:43
+Detector: flag=1, confidence=0.5, detection_time=5.07
+Saved results MAT to /MATLAB Drive/Project/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/mat/results_phase3_quick_20260528_122543.mat
+phase3_quick_test completed
+Running phase3_full_run...
+Phase3 full run log — 28-May-2026 12:25:48
+
+Loading parameters...
+Loading phase2 controllers...
+Computing baseline response...
+
+--- Running scenario 1 (bias) ---
+Scenario 1: detected=1, detection_time=6.007, delay=0.007, residual_rms=0.1744, residual_peak=0.2000
+
+--- Running scenario 2 (bias) ---
+Scenario 2: detected=1, detection_time=6.007, delay=0.007, residual_rms=0.5231, residual_peak=0.6000
+
+--- Running scenario 3 (ramp) ---
+Scenario 3: detected=1, detection_time=8.007, delay=0.007, residual_rms=0.4047, residual_peak=0.8500
+
+--- Running scenario 4 (sine) ---
+Scenario 4: detected=1, detection_time=10.007, delay=0.007, residual_rms=0.1643, residual_peak=0.3000
+
+--- Running scenario 5 (bias) ---
+Scenario 5: detected=1, detection_time=12.007, delay=0.007, residual_rms=0.2163, residual_peak=0.3000
+
+Saved results to /MATLAB Drive/Project/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/mat/phase3_data_20260528_122548.mat and /MATLAB Drive/Project/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/csv/phase3_summary_20260528_122548.csv
+phase3_full_run completed
+phase3_full_run completed
+Running phase5_full_comparison...
+Phase5 run log - 28-May-2026 12:26:27
+Detector: flag=1, confidence=0.129996, detection_time=5.002, delay=0.002
+Resilient sim: transitions=1, final_mode=2
+Phase5 full comparison failed: Unrecognized function or variable 'N'.
