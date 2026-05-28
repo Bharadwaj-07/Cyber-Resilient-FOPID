@@ -110,9 +110,42 @@ opts_1dof.eval.objective_mode = 'itae_only';
 opts_1dof.bounds.lb = [0.05*Kp0, 0.05*Ki0, 0.005*Kd0, 0.2, 0.2];
 opts_1dof.bounds.ub = [3.0*Kp0, 3.0*Ki0, 1.5*Kd0, 1.8, 1.8];
 opts_1dof.seed = [0.8*Kp0, 0.8*Ki0, 0.5*Kd0, 0.95, 0.95];
-tic;
-[best_params_1dof, best_ITAE_1dof, pso_history_1dof] = pso_tuner(G_fwd, G_sen, opts_1dof);
-elapsed_1dof = toc;
+
+% Multi-start PSO for 1DoF: try several restarts and keep the best ITAE
+n_restarts = getopt(opts_1dof, 'n_restarts', 6);
+best_ITAE_1dof = inf;
+best_params_1dof = [];
+best_hist_1dof = [];
+best_elapsed = 0;
+lb1 = opts_1dof.bounds.lb; ub1 = opts_1dof.bounds.ub;
+for r = 1 : n_restarts
+    if r == 1 && isfield(opts_1dof, 'seed') && ~isempty(opts_1dof.seed)
+        seed_r = opts_1dof.seed;
+    else
+        rng('shuffle');
+        seed_r = lb1 + rand(1, numel(lb1)) .* (ub1 - lb1);
+    end
+    opts_run = opts_1dof;
+    opts_run.seed = seed_r;
+    fprintf('\n1DoF restart %d/%d: seed = [', r, n_restarts);
+    fprintf(' %.3g', seed_r);
+    fprintf(' ]\n');
+    tic;
+    [params_r, itae_r, hist_r] = pso_tuner(G_fwd, G_sen, opts_run);
+    elapsed_r = toc;
+    fprintf('  Restart %d ITAE = %.5f (time %.1f s)\n', r, itae_r, elapsed_r);
+    if itae_r < best_ITAE_1dof
+        best_ITAE_1dof = itae_r;
+        best_params_1dof = params_r;
+        best_hist_1dof = hist_r;
+        best_elapsed = elapsed_r;
+    end
+end
+if isempty(best_params_1dof)
+    error('1DoF PSO failed to return any valid result');
+end
+pso_history_1dof = best_hist_1dof;
+elapsed_1dof = best_elapsed;
 fprintf('1DoF tuning time: %.1f s\n', elapsed_1dof);
 
 Kp1  = best_params_1dof(1);  Ki1  = best_params_1dof(2);  Kd1  = best_params_1dof(3);
