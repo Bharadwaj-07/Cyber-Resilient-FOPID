@@ -6,7 +6,11 @@ try
     addpath(pwd);
 
     % Prepare results folder and log
-    outdir = fullfile('results','phase3'); if ~exist(outdir,'dir'), mkdir(outdir); end
+    paths3 = phase_artifacts('phase3');
+    outdir = paths3.root;
+    plotdir = paths3.plots;
+    matdir = paths3.mat;
+    csvdir = paths3.csv;
     global AVR_SHARED_LOG_FID AVR_SHARED_LOG_PATH
     run_ts = datestr(now,'yyyymmdd_HHMMSS');
     if exist('AVR_SHARED_LOG_FID','var') && ~isempty(AVR_SHARED_LOG_FID) && AVR_SHARED_LOG_FID > 0
@@ -90,35 +94,43 @@ try
     results.y_meas = y_meas;
     results.attack_config = attack_config;
     results.detector_config = detector_config;
-    save('results_phase3_quick.mat', 'results');
-    copyfile('results_phase3_quick.mat', fullfile(outdir, ['results_phase3_quick_' run_ts '.mat']));
-    fprintf(lf, 'Saved results MAT to %s\n', fullfile(outdir, ['results_phase3_quick_' run_ts '.mat']));
+    save(fullfile(matdir, ['results_phase3_quick_' run_ts '.mat']), 'results');
+    fprintf(lf, 'Saved results MAT to %s\n', fullfile(matdir, ['results_phase3_quick_' run_ts '.mat']));
+
+    csvpath = fullfile(csvdir, ['results_phase3_quick_' run_ts '.csv']);
+    fidcsv = fopen(csvpath,'w');
+    fprintf(fidcsv,'attack_detected,confidence,detection_time,detection_delay,attack_start_time\n');
+    fprintf(fidcsv,'%d,%.6f,%.6f,%.6f,%.6f\n', double(attack_flag), confidence, NaN2num(detection_time), NaN2num(detection_time - attack_config.start_time), attack_config.start_time);
+    fclose(fidcsv);
 
     % Plots
-    figure('Name','Phase3 Quick Test');
-    subplot(3,1,1);
+    hf = figure('Name','Phase3 Quick Test','Visible','off','Color','w');
+    tiledlayout(3,1,'Padding','compact','TileSpacing','compact');
+    nexttile;
     plot(t, r_ref, '--k', 'LineWidth', 1); hold on;
-    plot(t, y_true, 'b', 'LineWidth', 1);
-    plot(t, y_meas, 'r', 'LineWidth', 1);
-    legend('r_{ref}','y_{true}','y_{meas}');
-    title('Reference and Outputs'); grid on;
+    plot(t, y_true, 'b', 'LineWidth', 1.2);
+    plot(t, y_meas, 'r', 'LineWidth', 1.0);
+    legend('r_{ref}','y_{true}','y_{meas}','Location','best');
+    title('Reference and outputs'); grid on;
 
-    subplot(3,1,2);
-    plot(t, residuals, 'k'); hold on;
+    nexttile;
+    plot(t, residuals, 'k', 'LineWidth', 1); hold on;
     if ~isnan(detection_time)
         xline(detection_time, 'r--', 'LineWidth', 1.5);
     end
-    ylabel('Residual'); grid on; title('Residuals and detection');
+    ylabel('Residual'); grid on; title('Residual and detection');
 
-    subplot(3,1,3);
+    nexttile;
     Jk = abs(residuals) + movmean(abs(residuals), detector_config.window_size);
-    plot(t, Jk, 'm'); hold on;
-    % baseline threshold estimate
+    plot(t, Jk, 'm', 'LineWidth', 1); hold on;
     idx_baseline_end = find(t <= detector_config.baseline_window, 1, 'last');
     sigma = std(residuals(1:idx_baseline_end));
     threshold = detector_config.threshold_factor * max(sigma, 1e-6);
     yline(threshold, 'r--', 'LineWidth', 1.5);
-    legend('J_k','threshold'); grid on; title('Detection metric');
+    legend('J_k','threshold','Location','best'); grid on; title('Detection metric');
+
+    saveas(hf, fullfile(plotdir, ['results_phase3_quick_' run_ts '.png']));
+    close(hf);
 
     fprintf('\n--- Quick test results ---\n');
     fprintf('Attack flag: %d\n', attack_flag);
@@ -135,3 +147,7 @@ catch ME
     rethrow(ME);
 end
 if exist('lf','var') && closeLog, fprintf(lf,'Run complete\n'); fclose(lf); end
+
+function v = NaN2num(x)
+    if isempty(x) || isnan(x), v = NaN; else v = x; end
+end

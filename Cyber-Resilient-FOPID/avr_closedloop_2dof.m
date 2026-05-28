@@ -3,6 +3,7 @@
 % Requires: avr_parameters.m, fopid_operator.m, fopid_2dof.m, pso_tuner.m
 
 avr_parameters;
+paths = phase_artifacts('phase2');
 
 % --- Reproducibility ---
 rng(1, 'twister');
@@ -121,16 +122,27 @@ fprintf('Overshoot:     %.2f %%\n', info_1dof.Overshoot);
 fprintf('ITAE:          %.5f\n', best_ITAE_1dof);
 
 % --- PSO convergence plot ---
-figure('Name','PSO Convergence');
+hf = figure('Name','PSO Convergence','Visible','off','Color','w');
 semilogy(pso_history, 'LineWidth', 1.5);
 grid on;
 xlabel('Iteration'); ylabel('Best ITAE (log scale)');
 title('PSO convergence — 2DoF FOPID tuning');
+saveas(hf, fullfile(paths.plots, 'phase2_pso_convergence.png'));
+close(hf);
+
+phase2_table = table(...
+    {'2DoF'; '1DoF'}, ...
+    [best_ITAE; best_ITAE_1dof], ...
+    [info_2dof.RiseTime; info_1dof.RiseTime], ...
+    [info_2dof.SettlingTime; info_1dof.SettlingTime], ...
+    [info_2dof.Overshoot; info_1dof.Overshoot], ...
+    'VariableNames', {'controller_name','itae','rise_time','settling_time','overshoot'});
+writetable(phase2_table, fullfile(paths.csv, 'phase2_summary.csv'));
 
 % --- Save ---
-save('avr_phase2.mat', 'best_params', 'best_ITAE', ...
+save(fullfile(paths.mat, 'avr_phase2.mat'), 'best_params', 'best_ITAE', ...
     'C_r', 'C_y', 'G_cl_2dof', 'pso_history', 'info_2dof', ...
     'best_params_1dof', 'best_ITAE_1dof', 'pso_history_1dof', ...
     'C_r_1dof', 'C_y_1dof', 'G_cl_1dof', 'info_1dof', ...
     'C_pid0', 'Kp0', 'Ki0', 'Kd0', 'opts');
-disp('Phase 2 results saved to avr_phase2.mat');
+disp(['Phase 2 results saved to ' fullfile(paths.mat, 'avr_phase2.mat')]);

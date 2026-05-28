@@ -7,8 +7,12 @@
 % - Logs results to CSV and MAT, produces summary plots
 
 timestamp = datestr(now,'yyyymmdd_HHMMSS');
-logdir = fullfile(pwd, 'phase3_results');
-if ~exist(logdir,'dir'), mkdir(logdir); end
+paths3 = phase_artifacts('phase3');
+rootdir = paths3.root;
+plotdir = paths3.plots;
+matdir = paths3.mat;
+csvdir = paths3.csv;
+logdir = paths3.logs;
 global AVR_SHARED_LOG_FID AVR_SHARED_LOG_PATH
 if exist('AVR_SHARED_LOG_FID','var') && ~isempty(AVR_SHARED_LOG_FID) && AVR_SHARED_LOG_FID > 0
     fidlog = AVR_SHARED_LOG_FID;
@@ -20,8 +24,8 @@ else
     closeLog = fidlog > 2;
     if fidlog < 0, error('Cannot open log file'); end
 end
-csvfile = fullfile(logdir, ['phase3_summary_' timestamp '.csv']);
-matfile = fullfile(logdir, ['phase3_data_' timestamp '.mat']);
+csvfile = fullfile(csvdir, ['phase3_summary_' timestamp '.csv']);
+matfile = fullfile(matdir, ['phase3_data_' timestamp '.mat']);
 fprintf(fidlog, 'Phase3 full run log — %s\n', datestr(now));
 
 try
@@ -35,9 +39,10 @@ try
     G_fwd = G_amp * G_exc * G_gen;
 
     % Try to load phase2 controllers if present
-    if exist('avr_phase2.mat','file')
-        fprintf(fidlog, 'Loading avr_phase2.mat controllers...\n');
-        data = load('avr_phase2.mat');
+    phase2mat = fullfile(phase_artifacts('phase2').mat, 'avr_phase2.mat');
+    if exist(phase2mat,'file')
+        fprintf(fidlog, 'Loading phase2 controllers...\n');
+        data = load(phase2mat);
         if isfield(data,'C_y')
             C_2dof_y = data.C_y;
         elseif isfield(data,'C_y_2dof')
@@ -121,7 +126,7 @@ try
 
     % Prepare CSV
     csvfid = fopen(csvfile,'w');
-    fprintf(csvfid,'id,type,magnitude,slope,frequency,start_time,detected,detection_time,detection_delay,confidence,mode_transitions,final_mode\n');
+    fprintf(csvfid,'scenario_id,attack_type,attack_magnitude,attack_slope,attack_frequency,attack_start_time,attack_detected,detection_time,detection_delay,confidence,mode_transitions,final_mode\n');
 
     results = struct(); results.scenarios = scenarios; results.runs = {};
 
@@ -164,7 +169,7 @@ try
 
         % Save run result
         runres = struct();
-        runres.scenario = sc; runres.attack_config = attack_config; runres.attack_flag = attack_flag;
+        runres.scenario = sc; runres.attack_type = sc.type; runres.attack_config = attack_config; runres.attack_flag = attack_flag;
         runres.confidence = confidence; runres.detection_time = detection_time; runres.detection_delay = detection_delay;
         runres.mode_transitions = mode_transitions; runres.final_mode = final_mode; runres.switch_times = switch_times;
         runres.t = t; runres.y_true = y_true; runres.y_meas = y_meas; runres.residuals = residuals; runres.u = u; runres.mode_history = mode_history;
@@ -176,16 +181,13 @@ try
             sc.id, sc.type, field_or_default(sc,'magnitude',NaN), field_or_default(sc,'slope',NaN), field_or_default(sc,'frequency',NaN), ...
             sc.start_time, double(attack_flag), NaN2num(detection_time), NaN2num(detection_delay), confidence, mode_transitions, final_mode);
 
-        % Plot per-run figure
-        hf = figure('Visible','off');
-        subplot(3,1,1);
-        plot(t, r_ref, '--k', t, y_true, 'b', t, y_meas, 'r'); legend('r','y_{true}','y_{meas}'); title(sprintf('Scenario %d: %s', sc.id, sc.type)); grid on;
-        subplot(3,1,2);
-        plot(t, residuals); hold on; if ~isnan(detection_time), xline(detection_time,'r--'); end; title('Residuals'); grid on;
-        subplot(3,1,3);
-        plot(t, mode_history); ylim([0.5 3.5]); title('Switcher mode history'); grid on;
-        saveas(hf, fullfile(logdir, sprintf('scenario_%02d_%s.png', sc.id, sc.type)));
-        close(hf);
+        % Plot per-run figure using the shared clean Phase 3 plot layout.
+        try
+            plotfile = fullfile(plotdir, sprintf('scenario_%02d_%s.png', sc.id, sc.type));
+            avr_phase3_plot(runres, plotfile);
+        catch ME
+            warning('Scenario plot failed: %s', ME.message);
+        end
 
         fprintf(fidlog, 'Scenario %d: detected=%d, detection_time=%.3f, delay=%.3f, mode_trans=%d, final_mode=%d\n', sc.id, attack_flag, NaN2num(detection_time), NaN2num(detection_delay), mode_transitions, final_mode);
     end

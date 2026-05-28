@@ -4,8 +4,12 @@
 
 % Setup
 addpath(pwd);
-if ~exist('results','dir'), mkdir('results'); end
-outdir = fullfile('results','phase5'); if ~exist(outdir,'dir'), mkdir(outdir); end
+paths5 = phase_artifacts('phase5');
+outdir = paths5.root;
+plotdir = paths5.plots;
+matdir = paths5.mat;
+csvdir = paths5.csv;
+logdir = paths5.logs;
 staleCsvs = {fullfile(outdir, 'phase5_comparison.csv'), fullfile(outdir, 'phase5_anomaly_summary.csv')};
 for iStale = 1:numel(staleCsvs)
     if exist(staleCsvs{iStale}, 'file')
@@ -20,7 +24,7 @@ if exist('AVR_SHARED_LOG_FID','var') && ~isempty(AVR_SHARED_LOG_FID) && AVR_SHAR
     closeLog = false;
     logpath = AVR_SHARED_LOG_PATH;
 else
-    logpath = fullfile(outdir, ['phase5_run_' run_ts '.log']);
+    logpath = fullfile(logdir, ['phase5_run_' run_ts '.log']);
     lf = fopen(logpath,'w');
     closeLog = lf > 2;
     if lf < 0
@@ -34,8 +38,9 @@ fprintf('Phase5 log: %s\n', logpath);
 
 % Load parameters and Phase 2 controllers
 avr_parameters;
-if exist('avr_phase2.mat','file')
-    data = load('avr_phase2.mat');
+phase2mat = fullfile(phase_artifacts('phase2').mat, 'avr_phase2.mat');
+if exist(phase2mat,'file')
+    data = load(phase2mat);
     if isfield(data,'best_params')
         best_params = data.best_params;
     end
@@ -239,29 +244,29 @@ for i = 1:length(scenarios)
 
     % Collect table row
     row = struct();
-    row.scenario = sc.name; row.attack_type = sc.type;
-    if isfield(sc,'magnitude'), row.attack_mag = sc.magnitude; else row.attack_mag = NaN; end
+    row.scenario_name = sc.name; row.attack_type = sc.type;
+    if isfield(sc,'magnitude'), row.attack_magnitude = sc.magnitude; else row.attack_magnitude = NaN; end
     if isfield(sc,'slope'), row.attack_slope = sc.slope; else row.attack_slope = NaN; end
     if isfield(sc,'frequency'), row.attack_frequency = sc.frequency; else row.attack_frequency = NaN; end
     row.attack_start_time = attack_cfg.start_time;
-    row.detected = double(attack_flag); row.detection_time = detection_time; row.detection_delay = detection_delay; row.confidence = confidence;
+    row.attack_detected = double(attack_flag); row.detection_time = detection_time; row.detection_delay = detection_delay; row.confidence = confidence;
     row.residual_baseline_sigma = residual_baseline_sigma;
     row.residual_abs_max = residual_abs_max;
     row.residual_abs_mean = residual_abs_mean;
     row.residual_rms = residual_rms;
     row.residual_peak_to_sigma = residual_peak_to_sigma;
     row.detector_threshold = threshold;
-    row.ITAE_1dof = metrics.ITAE_1dof; row.ITAE_2dof = metrics.ITAE_2dof; row.ITAE_pid = metrics.ITAE_pid; row.ITAE_res = metrics.ITAE_res;
-    row.delta_ITAE_res_1dof = metrics.delta_ITAE_res_1dof;
-    row.delta_ITAE_res_pid = metrics.delta_ITAE_res_pid;
-    row.delta_ITAE_res_2dof = metrics.delta_ITAE_res_2dof;
-    row.y1dof_final = safe_scalar(y_1dof_sc(end), signal_limit); row.y2dof_final = safe_scalar(y_2dof_sc(end), signal_limit); row.y_pid_final = safe_scalar(y_pid_sc(end), signal_limit); row.y_res_final = safe_scalar(y_res(end), signal_limit);
-    row.y1dof_peak = safe_scalar(max(y_1dof_sc), signal_limit);
-    row.y2dof_peak = safe_scalar(max(y_2dof_sc), signal_limit); row.y_pid_peak = safe_scalar(max(y_pid_sc), signal_limit); row.y_res_peak = safe_scalar(max(y_res), signal_limit);
+    row.itae_1dof = metrics.ITAE_1dof; row.itae_2dof = metrics.ITAE_2dof; row.itae_pid = metrics.ITAE_pid; row.itae_res = metrics.ITAE_res;
+    row.delta_itae_res_1dof = metrics.delta_ITAE_res_1dof;
+    row.delta_itae_res_pid = metrics.delta_ITAE_res_pid;
+    row.delta_itae_res_2dof = metrics.delta_ITAE_res_2dof;
+    row.y_1dof_final = safe_scalar(y_1dof_sc(end), signal_limit); row.y_2dof_final = safe_scalar(y_2dof_sc(end), signal_limit); row.y_pid_final = safe_scalar(y_pid_sc(end), signal_limit); row.y_res_final = safe_scalar(y_res(end), signal_limit);
+    row.y_1dof_peak = safe_scalar(max(y_1dof_sc), signal_limit);
+    row.y_2dof_peak = safe_scalar(max(y_2dof_sc), signal_limit); row.y_pid_peak = safe_scalar(max(y_pid_sc), signal_limit); row.y_res_peak = safe_scalar(max(y_res), signal_limit);
     info1 = safe_stepinfo(y_1dof_sc, t);
-    row.y1dof_overshoot = info1.Overshoot; row.y2dof_overshoot = info2.Overshoot; row.y_pid_overshoot = infoP.Overshoot; row.y_res_overshoot = infoR.Overshoot;
-    row.y2dof_settling = info2.SettlingTime; row.y_pid_settling = infoP.SettlingTime; row.y_res_settling = infoR.SettlingTime;
-    row.y1dof_settling = info1.SettlingTime;
+    row.y_1dof_overshoot = info1.Overshoot; row.y_2dof_overshoot = info2.Overshoot; row.y_pid_overshoot = infoP.Overshoot; row.y_res_overshoot = infoR.Overshoot;
+    row.y_2dof_settling = info2.SettlingTime; row.y_pid_settling = infoP.SettlingTime; row.y_res_settling = infoR.SettlingTime;
+    row.y_1dof_settling = info1.SettlingTime;
     row.mode_transitions = size(switch_times,1); row.final_mode = mode_hist(end);
     if ~isempty(switch_times)
         row.first_switch_time = switch_times(1,1);
@@ -274,29 +279,29 @@ for i = 1:length(scenarios)
 end
 
 % Write CSV
-csvpath = fullfile(outdir, 'phase5_comparison.csv');
+csvpath = fullfile(csvdir, 'phase5_comparison.csv');
 if isempty(rows)
     error('No Phase 5 rows collected; CSV not written.');
 end
 summaryTable = struct2table([rows{:}]);
 summaryTable = summaryTable(:, [ ...
-    {'scenario','attack_type','attack_mag','attack_slope','attack_frequency','attack_start_time', ...
-     'detected','detection_time','detection_delay','confidence', ...
+    {'scenario_name','attack_type','attack_magnitude','attack_slope','attack_frequency','attack_start_time', ...
+     'attack_detected','detection_time','detection_delay','confidence', ...
      'residual_baseline_sigma','residual_abs_max','residual_abs_mean','residual_rms','residual_peak_to_sigma','detector_threshold', ...
-     'ITAE_1dof','ITAE_2dof','ITAE_pid','ITAE_res','delta_ITAE_res_1dof','delta_ITAE_res_pid','delta_ITAE_res_2dof', ...
-     'y1dof_final','y2dof_final','y_pid_final','y_res_final','y1dof_peak','y2dof_peak','y_pid_peak','y_res_peak', ...
-     'y1dof_overshoot','y2dof_overshoot','y_pid_overshoot','y_res_overshoot', ...
-     'y1dof_settling','y2dof_settling','y_pid_settling','y_res_settling', ...
+     'itae_1dof','itae_2dof','itae_pid','itae_res','delta_itae_res_1dof','delta_itae_res_pid','delta_itae_res_2dof', ...
+     'y_1dof_final','y_2dof_final','y_pid_final','y_res_final','y_1dof_peak','y_2dof_peak','y_pid_peak','y_res_peak', ...
+     'y_1dof_overshoot','y_2dof_overshoot','y_pid_overshoot','y_res_overshoot', ...
+     'y_1dof_settling','y_2dof_settling','y_pid_settling','y_res_settling', ...
      'mode_transitions','final_mode','first_switch_time','last_switch_time'}]);
 writetable(summaryTable, csvpath);
 
 % Also keep a compact anomaly-focused CSV for quick comparisons.
-anomalyCsvPath = fullfile(outdir, 'phase5_anomaly_summary.csv');
+anomalyCsvPath = fullfile(csvdir, 'phase5_anomaly_summary.csv');
 anomalyTable = summaryTable(:, [ ...
-    {'scenario','attack_type','attack_mag','attack_slope','attack_frequency','attack_start_time', ...
-     'detected','detection_time','detection_delay','confidence', ...
+    {'scenario_name','attack_type','attack_magnitude','attack_slope','attack_frequency','attack_start_time', ...
+     'attack_detected','detection_time','detection_delay','confidence', ...
      'residual_baseline_sigma','residual_abs_max','residual_abs_mean','residual_rms','residual_peak_to_sigma','detector_threshold', ...
-    'ITAE_1dof','ITAE_2dof','ITAE_pid','ITAE_res','delta_ITAE_res_1dof','delta_ITAE_res_pid','delta_ITAE_res_2dof', ...
+    'itae_1dof','itae_2dof','itae_pid','itae_res','delta_itae_res_1dof','delta_itae_res_pid','delta_itae_res_2dof', ...
      'mode_transitions','final_mode','first_switch_time','last_switch_time'}]);
 writetable(anomalyTable, anomalyCsvPath);
 fprintf(lf, 'Saved CSV summaries: %s and %s\n', csvpath, anomalyCsvPath);
@@ -310,7 +315,7 @@ try
     if height(csvCheck) ~= expectedRows || height(anomalyCheck) ~= expectedRows
         error('CSV row count mismatch: expected %d, got %d and %d', expectedRows, height(csvCheck), height(anomalyCheck));
     end
-    finiteITAE = sum(isfinite(csvCheck.ITAE_res));
+    finiteITAE = sum(isfinite(csvCheck.itae_res));
     finiteResidualRMS = sum(isfinite(csvCheck.residual_rms));
     finiteDetections = sum(isfinite(csvCheck.detection_time));
     fprintf(lf, 'Phase5 CSV sanity: rows=%d, finite_ITAE_Res=%d, finite_residual_rms=%d, finite_det_time=%d\n', ...
@@ -321,7 +326,7 @@ catch ME
 end
 
 % Save summary MAT
-save(fullfile(outdir,'phase5_summary.mat'), 'rows');
+save(fullfile(matdir,'phase5_summary.mat'), 'rows');
 fprintf('Phase 5 full comparison complete. Results in %s\n', outdir);
 fprintf(lf, '\nPhase5 summary saved.\n');
 if closeLog

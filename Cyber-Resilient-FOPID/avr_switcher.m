@@ -50,7 +50,7 @@ if nargin < 7 && ~isstruct(C_pid)
 end
 
 % Prepare Phase 4 log for this switcher invocation
-outdir4 = fullfile('results','phase4'); if ~exist(outdir4,'dir'), mkdir(outdir4); end
+paths4 = phase_artifacts('phase4');
 run_ts = datestr(now,'yyyymmdd_HHMMSS');
 global AVR_SHARED_LOG_FID AVR_SHARED_LOG_PATH
 if exist('AVR_SHARED_LOG_FID','var') && ~isempty(AVR_SHARED_LOG_FID) && AVR_SHARED_LOG_FID > 0
@@ -58,7 +58,7 @@ if exist('AVR_SHARED_LOG_FID','var') && ~isempty(AVR_SHARED_LOG_FID) && AVR_SHAR
     logpath4 = AVR_SHARED_LOG_PATH;
     closeLog = false;
 else
-    logpath4 = fullfile(outdir4, sprintf('phase4_switcher_%s.log', run_ts));
+    logpath4 = fullfile(paths4.logs, sprintf('phase4_switcher_%s.log', run_ts));
     lf = fopen(logpath4,'w');
     closeLog = lf > 2;
 end

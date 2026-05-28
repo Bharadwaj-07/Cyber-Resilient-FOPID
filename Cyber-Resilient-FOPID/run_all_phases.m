@@ -57,7 +57,7 @@ end
 
 % Collect Phase4 state history files if present
 try
-    p4dir = fullfile('results','phase4');
+    p4dir = phase_artifacts('phase4').root;
     if exist(p4dir,'dir')
         files_s = dir(fullfile(p4dir,'phase4_states_*.mat'));
         for k=1:length(files_s)
@@ -77,14 +77,14 @@ end
 fprintf('Run complete. See %s for details.\n', logfile);
 
 % Simple aggregator: look for phase5 CSV and plot ITAE comparisons
-csvpath = fullfile('results','phase5','phase5_comparison.csv');
+csvpath = fullfile(phase_artifacts('phase5').csv, 'phase5_comparison.csv');
 if exist(csvpath,'file')
     T = readtable(csvpath);
     outfig = fullfile(outRoot,'phase5_ITAE.png');
     try
         hf = figure('Visible','off');
-        bar([T.ITAE_2dof, T.ITAE_pid, T.ITAE_res]);
-        set(gca,'XTickLabel', cellstr(string(T.scenario)));
+        bar([T.itae_2dof, T.itae_pid, T.itae_res]);
+        set(gca,'XTickLabel', cellstr(string(T.scenario_name)));
         legend('2DoF','PID','Resilient','Location','northwest');
         title('Phase5 ITAE Comparison'); ylabel('ITAE'); grid on;
         exportgraphics(hf, outfig, 'Resolution', 150);

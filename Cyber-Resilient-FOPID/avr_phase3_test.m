@@ -3,15 +3,23 @@
 
 clearvars; close all; clc;
 
+paths3 = phase_artifacts('phase3');
+outdir = paths3.root;
+plotdir = paths3.plots;
+matdir = paths3.mat;
+csvdir = paths3.csv;
+
 % Load parameters and Phase 2 results
 avr_parameters;
-if exist('avr_phase2.mat','file')
-    load('avr_phase2.mat');
+phase2mat = fullfile(phase_artifacts('phase2').mat, 'avr_phase2.mat');
+if exist(phase2mat,'file')
+    load(phase2mat);
 else
     warning('avr_phase2.mat not found. Please run Phase 2 first.');
 end
-if exist('avr_baseline.mat','file')
-    load('avr_baseline.mat');
+phase1mat = fullfile(phase_artifacts('phase1').mat, 'avr_baseline.mat');
+if exist(phase1mat,'file')
+    load(phase1mat);
 end
 
 % Build plant
@@ -74,8 +82,7 @@ for i = 1:length(attack_types)
     y_meas = avr_attack_injector(y_true, t, cfg);
 
     % Detector
-    % Detector
-    [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_cl, r, detector_cfg);
+    [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_cl_2dof, r, detector_cfg);
 
     % Switcher: use C_y_2dof as error-path controller for 2DoF
     switcher_cfg = switcher_cfg;
@@ -83,9 +90,7 @@ for i = 1:length(attack_types)
     switcher_cfg.detector_attack_time = detection_time;
     [u_switched, mode_history, switch_times] = avr_switcher(y_meas, t, r, C_r_2dof, C_y_2dof, C_pid, switcher_cfg);
 
-    % Re-simulate plant with switched control by applying u_switched as external input is nontrivial.
-    % Instead, approximate resulting output y_switched by combining controller output and plant input via lsim
-    % Compute closed-loop response under switching approximately by simulating plant with u_switched as input
+    % Re-simulate plant with switched control by applying u_switched as external input.
     try
         y_switched = lsim(G_fwd, u_switched, t); % approximate plant response to switched control
     catch
@@ -118,14 +123,13 @@ for i = 1:length(attack_types)
         'info_true',info_true,'info_sw',info_sw,'info_pid',info_pid);
 
     % Save one-file per scenario
-    fname = fullfile('results', sprintf('phase3_%s.mat', cfg.type));
-    if ~exist('results','dir'), mkdir('results'); end
+    fname = fullfile(matdir, sprintf('phase3_%s.mat', cfg.type));
     r = results{i};
     save(fname, 'r');
     fprintf('Saved results to %s\n', fname);
     % Plot results for quick inspection
     try
-        pngname = fullfile('results', sprintf('phase3_%s.png', cfg.type));
+        pngname = fullfile(plotdir, sprintf('phase3_%s.png', cfg.type));
         avr_phase3_plot(r, pngname);
         fprintf('Saved plot to %s\n', pngname);
     catch ME
@@ -135,11 +139,11 @@ end
 
 % Save aggregate
 if exist('best_cfg','var')
-    save('results/phase3_all.mat','results','best_cfg');
+    save(fullfile(matdir,'phase3_all.mat'),'results','best_cfg');
 else
-    save('results/phase3_all.mat','results');
+    save(fullfile(matdir,'phase3_all.mat'),'results');
 end
-fprintf('Phase 3 tests complete. Results saved to results/phase3_all.mat\n');
+fprintf('Phase 3 tests complete. Results saved to %s\n', fullfile(matdir,'phase3_all.mat'));
 
 function C = zn_pid(G)
     [Gm, ~, ~, Wcg] = margin(G);

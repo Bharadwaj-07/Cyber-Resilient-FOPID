@@ -18,6 +18,7 @@ n = numel(results);
 fprintf('\nPhase 3 Validation Matrix\n');
 fprintf('Attack Type | Detected | Det Time(s) | Delay(s) | FP? | Modes | ITAE_2DoF | ITAE_Switched | ITAE_PID\n');
 fprintf('-------------------------------------------------------------------------------------------------------\n');
+rows = cell(n,1);
 for i = 1:n
     r = results{i};
     det = r.attack_flag;
@@ -43,6 +44,14 @@ for i = 1:n
     itae_pid = r.metrics.ITAE_pid;
     fprintf('%10s   |   %1d     |   %8.3f | %7.3f | %3d | %5.0f | %8.4f |   %8.4f   |  %8.4f\n', ...
         r.attack_type, det, dt, delay, fp, modes, itae_2, itae_sw, itae_pid);
+    rows{i} = struct('attack_type',r.attack_type,'detected',det,'detection_time',dt,'detection_delay',delay,'false_positive',fp,'mode_transitions',modes,'itae_2dof',itae_2,'itae_switched',itae_sw,'itae_pid',itae_pid);
+end
+
+try
+    outdir = fullfile('phase3_results','csv');
+    if ~exist(outdir,'dir'), mkdir(outdir); end
+    writetable(struct2table([rows{:}]), fullfile(outdir, 'phase3_validation_matrix.csv'));
+catch
 end
 
 end

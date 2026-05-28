@@ -3,8 +3,9 @@
 % Requires avr_phase2.mat and avr_baseline.mat
 
 avr_parameters;
-load('avr_phase2.mat');
-load('avr_baseline.mat');
+paths = phase_artifacts('phase2');
+load(fullfile(paths.mat, 'avr_phase2.mat'));
+load(fullfile(phase_artifacts('phase1').mat, 'avr_baseline.mat'));
 
 G_amp = tf(Ka,[Ta 1]); G_exc = tf(Ke,[Te 1]);
 G_gen = tf(Kg,[Tg 1]); G_sen = tf(Ks,[Ts 1]);
@@ -50,7 +51,7 @@ ITAE_1dof = itae(y_1dof, t2);
 ITAE_2dof = itae(y_2dof, t3);
 
 % --- Comparison plot ---
-figure('Name','Controller Comparison','Position',[100 100 800 450]);
+hf = figure('Name','Controller Comparison','Position',[100 100 800 450],'Visible','off','Color','w');
 plot(t1, y_pid,  'r-',  'LineWidth', 1.5); hold on;
 plot(t2, y_1dof, 'b--', 'LineWidth', 1.5);
 plot(t3, y_2dof, 'g-',  'LineWidth', 2.0);
@@ -61,6 +62,8 @@ legend('Classical PID', '1DoF FOPID', '2DoF FOPID (tuned)', ...
 xlabel('Time (s)'); ylabel('Terminal voltage Vt (pu)');
 title('AVR step response — controller comparison');
 ylim([0 1.8]);
+saveas(hf, fullfile(paths.plots, 'phase2_controller_comparison.png'));
+close(hf);
 
 % --- Metrics table ---
 fprintf('\n%-20s %10s %12s %10s %10s\n', ...
@@ -79,8 +82,10 @@ for i = 1:3
 end
 
 % --- Save comparison ---
-save('avr_comparison.mat', 'ITAE_pid','ITAE_1dof','ITAE_2dof');
-disp('Comparison saved to avr_comparison.mat');
+phase2_compare = table(controllers', ITAEs', 'VariableNames', {'controller_name','itae'});
+writetable(phase2_compare, fullfile(paths.csv, 'phase2_controller_comparison.csv'));
+save(fullfile(paths.mat, 'avr_comparison.mat'), 'ITAE_pid','ITAE_1dof','ITAE_2dof');
+disp(['Comparison saved to ' fullfile(paths.mat, 'avr_comparison.mat')]);
 
 % --- Helper: Ziegler-Nichols PID from gain margin ---
 function C = zn_pid(G)

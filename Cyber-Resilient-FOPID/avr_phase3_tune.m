@@ -6,8 +6,9 @@ clearvars; close all; clc;
 
 % Load parameters and Phase 2 results
 avr_parameters;
-if exist('avr_phase2.mat','file')
-    load('avr_phase2.mat');
+phase2mat = fullfile(phase_artifacts('phase2').mat, 'avr_phase2.mat');
+if exist(phase2mat,'file')
+    load(phase2mat);
 else
     error('avr_phase2.mat not found. Run Phase 2 first.');
 end
@@ -75,7 +76,7 @@ for tfac = threshold_factors
                         y_meas = avr_attack_injector(y_true, t, cfg);
 
                         % Detector
-                        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_cl, r, detector_cfg);
+                        [attack_flag, confidence, detection_time, residuals] = avr_detector(y_meas, t, G_cl_2dof, r, detector_cfg);
 
                         % Switcher (simulate control action)
                         switcher_cfg.detector_attack_flag = attack_flag;
@@ -133,8 +134,8 @@ end
 best_cfg = results_grid(best_idx);
 
 % Save
-if ~exist('results','dir'), mkdir('results'); end
-save('results/results_tune_detector.mat','results_grid','best_cfg');
+paths3 = phase_artifacts('phase3');
+save(fullfile(paths3.mat, 'results_tune_detector.mat'),'results_grid','best_cfg');
 
 % Report
 fprintf('Tuning complete across %d attacks. Best config: threshold_factor=%.2f, Q_scale=%.2f, R_scale=%.2f, hysteresis=%.2f, recovery=%.2f\n', length(attack_list), best_cfg.threshold_factor, best_cfg.Q_scale, best_cfg.R_scale, best_cfg.hysteresis_time, best_cfg.recovery_time);

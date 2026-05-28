@@ -19,32 +19,36 @@ if isfield(r,'detection_time'), dt = r.detection_time; else dt = NaN; end
 if isfield(r,'mode_history'), mode_history = r.mode_history; else mode_history = ones(size(t)); end
 if isfield(r,'u_switched'), u = r.u_switched; else u = zeros(size(t)); end
 
-figure('Units','normalized','Position',[0.1 0.1 0.7 0.6]);
-ax1 = subplot(3,1,1);
-plot(t, r.y_true, 'k-', 'LineWidth', 1.5); hold on;
-plot(t, y_meas, 'r--');
+hf = figure('Units','normalized','Position',[0.08 0.08 0.84 0.74],'Color','w','Visible','off');
+tiledlayout(3,1,'Padding','compact','TileSpacing','compact');
+
+nexttile;
+plot(t, r.y_true, 'k-', 'LineWidth', 1.4); hold on;
+plot(t, y_meas, 'r-', 'LineWidth', 1.0);
 yline(1.0, 'k:');
-legend('y_{true}','y_{meas}','Setpoint','Location','southeast');
-title(sprintf('Output — attack: %s', r.attack_type));
-xlabel('Time (s)'); ylabel('V_{t} (pu)'); grid on;
 if ~isnan(dt), xline(dt, 'm--', 'Detection'); end
+legend('y_{true}','y_{meas}','Setpoint','Detection','Location','best');
+title(sprintf('Phase 3 output: %s', r.attack_type));
+xlabel('Time (s)'); ylabel('V_t (pu)'); grid on;
 
-ax2 = subplot(3,1,2);
-plot(t, residuals, 'b-'); hold on; yline(0,'k:');
-title('Residual (y_{meas}-\hat{y})'); xlabel('Time (s)'); ylabel('Residual'); grid on;
+nexttile;
+plot(t, residuals, 'b-', 'LineWidth', 1.0); hold on; yline(0,'k:');
 if ~isnan(dt), xline(dt,'m--','Detection'); end
+title('Residual'); xlabel('Time (s)'); ylabel('Residual'); grid on;
 
-ax3 = subplot(3,1,3);
-plot(t, u, 'g-'); hold on;
-stairs(t, mode_history, 'k--');
-legend('u (control)','mode (1 normal,2 pid,3 rec)');
-title('Control and Mode History'); xlabel('Time (s)'); ylabel('u / mode'); grid on;
+nexttile;
+plot(t, u, 'g-', 'LineWidth', 1.0); hold on;
+stairs(t, mode_history, 'k--', 'LineWidth', 1.0);
 if ~isnan(dt), xline(dt,'m--','Detection'); end
+legend('u (control)','mode','Location','best');
+title('Control and mode history'); xlabel('Time (s)'); ylabel('u / mode'); grid on;
 
-linkaxes([ax1 ax2 ax3],'x');
+sgtitle(sprintf('Attack: %s | det=%s', r.attack_type, num2str(dt)));
 if nargin >= 2 && ~isempty(outname)
     % ensure results dir
-    if ~exist('results','dir'), mkdir('results'); end
-    saveas(gcf, outname);
+    outdir = fileparts(outname);
+    if ~isempty(outdir) && ~exist(outdir,'dir'), mkdir(outdir); end
+    saveas(hf, outname);
 end
+close(hf);
 end
