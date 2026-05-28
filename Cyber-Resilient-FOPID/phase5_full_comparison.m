@@ -798,6 +798,12 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
             if mode ~= 2
                 switch_times(end+1,:) = [t(k), mode, 2]; %#ok<AGROW>
                 mode = 2;
+                % Bumpless transfer: initialize PID state so the output matches
+                % the control effort already being applied by the 2DoF controller.
+                if nx_pidx > 0
+                    epid_now = r(k) - y_meas;
+                    xpid = align_controller_state(Cpid_ss, epid_now, u_prev, xpid);
+                end
             end
         end
         mode_history(k) = mode;
@@ -821,6 +827,36 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
 
     if isempty(switch_times)
         switch_times = zeros(0,3);
+    end
+end
+
+function x = align_controller_state(ctrl_ss, input_value, desired_output, fallback_state)
+    % Align controller state so ctrl_ss produces desired_output for the current input.
+    % Uses a regularized least-squares solve when the direct mapping is not invertible.
+    x = fallback_state;
+    try
+        Cc = ctrl_ss.C;
+        Dc = ctrl_ss.D;
+        if isempty(Cc)
+            return;
+        end
+        target = desired_output - Dc * input_value;
+        if isempty(ctrl_ss.A)
+            x = zeros(size(fallback_state));
+            return;
+        end
+        if size(Cc,1) == 1
+            denom = Cc * Cc.' + 1e-6;
+            x = (Cc.' / denom) * target;
+        else
+            reg = 1e-6 * eye(size(Cc,2));
+            x = (Cc.' * Cc + reg) \ (Cc.' * target);
+        end
+        if any(~isfinite(x))
+            x = fallback_state;
+        end
+    catch
+        x = fallback_state;
     end
 end
 
