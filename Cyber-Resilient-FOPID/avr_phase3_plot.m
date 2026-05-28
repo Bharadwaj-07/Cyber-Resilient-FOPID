@@ -12,7 +12,11 @@ else
     r = result;
 end
 
-t = 0:0.001: (length(r.y_true)-1)/1000;
+if isfield(r,'t') && ~isempty(r.t)
+    t = r.t(:);
+else
+    t = (0:0.001:(length(r.y_true)-1)/1000)';
+end
 if isfield(r,'y_meas'), y_meas = r.y_meas; else y_meas = r.y_true; end
 if isfield(r,'residuals'), residuals = r.residuals; else residuals = zeros(size(t)); end
 if isfield(r,'detection_time'), dt = r.detection_time; else dt = NaN; end

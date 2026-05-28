@@ -81,15 +81,19 @@ try
 
     % Time base and reference
     Tfinal = 25;
-    dt = 0.01;
+    dt = 0.001;
     t = (0:dt:Tfinal)';
     r_ref = ones(size(t));
 
-    % Baseline closed-loop response using DC or linear sim
+    % Baseline closed-loop response using the tuned 2DoF controller when available.
     fprintf(fidlog, 'Computing baseline response...\n');
     try
-        % Use C_pid as controller on feedback path for baseline
-        G_cl = minreal((G_fwd * C_pid) / (1 + G_fwd * C_pid * G_sen), 1e-6);
+        if exist('C_2dof_r','var') && ~isempty(C_2dof_r) && exist('C_2dof_y','var') && ~isempty(C_2dof_y)
+            G_cl = minreal((G_fwd * C_2dof_r) / (1 + G_fwd * C_2dof_y * G_sen), 1e-6);
+        else
+            % Fallback to PID if Phase 2 artifacts are unavailable.
+            G_cl = minreal((G_fwd * C_pid) / (1 + G_fwd * C_pid * G_sen), 1e-6);
+        end
         y_true = lsim(G_cl, r_ref, t);
     catch ME
         warning('Baseline sim failed: %s — using zeros', ME.message);
