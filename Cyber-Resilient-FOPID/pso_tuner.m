@@ -42,6 +42,8 @@ function [best_params, best_ITAE, history] = pso_tuner(G_plant, G_sensor, option
     c2 = getopt(options, 'c2',         1.49);
     Tf = getopt(options, 'Tfinal',      10);
     local_refine = getopt(options, 'local_refine', false);
+    robust_mode = getopt(options, 'robust_mode', 'none');
+    robust_weight = getopt(options, 'robust_weight', 0);
     local_maxiter = getopt(options, 'local_maxiter', 200);
     fixed_bc = getopt(options, 'fixed_bc', false);
     eval_cfg = getopt(options, 'eval', struct());
@@ -333,6 +335,21 @@ function cost = evaluate_2dof_fopid(params, G_plant, G_sensor, t, fixed_bc, eval
                  + rise_penalty ...
                  + overshoot_penalty ...
                  + ss_penalty;
+        end
+
+        % Optional robustness penalty: penalize sensitivity peak (measurement disturbance)
+        try
+            if ~isempty(robust_mode) && ~strcmpi(robust_mode,'none') && robust_weight > 0
+                % Loop L = G_plant * C_y * G_sensor
+                L = G_plant * C_y * G_sensor;
+                % Sensitivity S = 1/(1+L)
+                w = logspace(-3, 2, 200);
+                Svals = squeeze(abs(freqresp(1./(1+L), w)));
+                peakS = max(Svals(:));
+                cost = cost + robust_weight * peakS;
+            end
+        catch
+            % if robustness calc fails, don't crash the tuner
         end
 
         if ~isfinite(cost)

@@ -153,7 +153,7 @@ fprintf('Run complete. See %s for details.\n', logfile);
 
 % Simple aggregator: look for phase5 CSV and plot ITAE comparisons
 csvpath = fullfile(phase_artifacts('phase5').csv, 'phase5_comparison.csv');
-if exist(csvpath,'file')
+    if exist(csvpath,'file')
     T = readtable(csvpath);
     outfig = fullfile(outRoot,'phase5_ITAE.png');
     try
@@ -165,6 +165,23 @@ if exist(csvpath,'file')
         exportgraphics(hf, outfig, 'Resolution', 150);
         close(hf);
         fprintf('Saved Phase5 ITAE plot to %s\n', outfig);
+        % If Phase5 shows 2DoF catastrophically worse than PID in any scenario,
+        % trigger a robust re-tuning of Phase2 using a robustness penalty.
+        bad_idx = find(~isfinite(T.itae_2dof) | (T.itae_2dof > 10 * T.itae_pid));
+        if ~isempty(bad_idx)
+            fprintf(runfid, 'Phase5 indicates 2DoF fragile in %d scenarios — triggering robust Phase2 re-tune.\n', numel(bad_idx));
+            try
+                % Re-run Phase2 with robust_mode enabled
+                opts = struct(); opts.robust_mode = 'sensitivity'; opts.robust_weight = 100; opts.n_particles = 40; opts.max_iter = 150;
+                fprintf(runfid, 'Starting robust Phase2 tuning...\n');
+                robust_opts = opts; avr_closedloop_2dof(robust_opts);
+                fprintf(runfid, 'Robust Phase2 tuning complete. Re-running Phase3 and Phase5...\n');
+                phase3_full_run();
+                phase5_full_comparison();
+            catch ME
+                fprintf(runfid, 'Robust re-tune failed: %s\n', ME.message);
+            end
+        end
     catch ME
         warning('Could not create phase5 ITAE plot: %s', ME.message);
     end

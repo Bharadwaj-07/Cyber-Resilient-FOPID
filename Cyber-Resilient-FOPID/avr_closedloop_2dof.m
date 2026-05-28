@@ -26,6 +26,14 @@ opts.frac.wb = 1e-3;
 opts.frac.wh = 1e3;
 opts.frac.N  = 5;
 
+% Allow caller to pass a struct 'robust_opts' to enable robust tuning
+if exist('robust_opts','var') && isstruct(robust_opts)
+    if isfield(robust_opts,'robust_mode'), opts.robust_mode = robust_opts.robust_mode; end
+    if isfield(robust_opts,'robust_weight'), opts.robust_weight = robust_opts.robust_weight; end
+    if isfield(robust_opts,'n_particles'), opts.n_particles = robust_opts.n_particles; end
+    if isfield(robust_opts,'max_iter'), opts.max_iter = robust_opts.max_iter; end
+end
+
 % PID baseline to center bounds
 C_pid0 = pidtune(G_fwd * G_sen, 'PID');
 Kp0 = max(C_pid0.Kp, 0.2);

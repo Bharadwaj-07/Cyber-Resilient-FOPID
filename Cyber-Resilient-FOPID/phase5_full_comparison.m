@@ -87,8 +87,8 @@ catch
     C_pid = pid(1,1,0.1);
 end
 
-% Time base and reference
-Tfinal = 25; dt = 0.01; t = (0:dt:Tfinal)'; r = ones(size(t));
+% Time base and reference (use same resolution as Phase 2 for comparability)
+Tfinal = 25; dt = 0.001; t = (0:dt:Tfinal)'; r = ones(size(t));
 signal_limit = 1e4;        % guardrail for clearly divergent traces; does not clip normal outputs
 residual_sigma_floor = 1e-3; % avoids inflated peak/sigma when baseline residual is nearly zero
 

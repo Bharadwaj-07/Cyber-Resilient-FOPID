@@ -232,10 +232,20 @@ for k = 1:N
                 % perform bumpless adjustment: set xp so that yp matches previous u_prev
                 if ~isempty(Cp) && any(Cp(:))
                     try
-                        xp = pinv(Cp) * (u_prev - Dp * ek);
-                        if exist('lf','var') && lf>0, fprintf(lf,'Performed bumpless adjust on PID at t=%.4f (detector switch)\n', t(k)); end
+                        % Regularized least-squares for bumpless alignment
+                        reg = 1e-6;
+                        Ct = Cp';
+                        G = Ct * Cp + reg * eye(size(Cp,2));
+                        rhs = Ct * (u_prev - Dp * ek);
+                        xp = G \ rhs;
+                        if exist('lf','var') && lf>0, fprintf(lf,'Performed regularized bumpless adjust on PID at t=%.4f (detector switch)\n', t(k)); end
                     catch ME
                         if exist('lf','var') && lf>0, fprintf(lf,'Bumpless adjust (PID) failed at t=%.4f: %s\n', t(k), ME.message); end
+                        try
+                            xp = pinv(Cp) * (u_prev - Dp * ek);
+                        catch
+                            xp = zeros(size(xp));
+                        end
                     end
                     % capture state dump
                     sd.time = t(k); sd.from = from_mode; sd.to = mode; sd.xp = xp; sd.x2 = x2;
@@ -250,12 +260,17 @@ for k = 1:N
             if mode == 1 && metric(k) > metric_thresh
             from_mode = mode; mode = 2; switch_times(end+1,:) = [t(k), from_mode, mode]; last_switch_time = t(k);
             % adjust PID state to avoid jump
-            if ~isempty(Cp) && any(Cp(:))
+                    if ~isempty(Cp) && any(Cp(:))
                     try
-                        xp = pinv(Cp) * (y2 - Dp * ek);
-                        if exist('lf','var') && lf>0, fprintf(lf,'Performed bumpless adjust on PID at t=%.4f (metric switch)\n', t(k)); end
+                        reg = 1e-6; Ct = Cp'; G = Ct * Cp + reg * eye(size(Cp,2)); rhs = Ct * (y2 - Dp * ek); xp = G \ rhs;
+                        if exist('lf','var') && lf>0, fprintf(lf,'Performed regularized bumpless adjust on PID at t=%.4f (metric switch)\n', t(k)); end
                     catch ME
                         if exist('lf','var') && lf>0, fprintf(lf,'Bumpless adjust (PID) failed at t=%.4f: %s\n', t(k), ME.message); end
+                        try
+                            xp = pinv(Cp) * (y2 - Dp * ek);
+                        catch
+                            xp = zeros(size(xp));
+                        end
                     end
             end
             % capture state dump
