@@ -917,6 +917,21 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
     else
         recovery_time = switcher_cfg.recovery_time;
     end
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'observer_recovery_time')
+        observer_recovery_time = max(1.0, recovery_time);
+    else
+        observer_recovery_time = max(eps, switcher_cfg.observer_recovery_time);
+    end
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'observer_innovation_limit')
+        observer_innovation_limit = 0.05;
+    else
+        observer_innovation_limit = max(eps, switcher_cfg.observer_innovation_limit);
+    end
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'observer_min_gain')
+        observer_min_gain = 0.02;
+    else
+        observer_min_gain = min(max(switcher_cfg.observer_min_gain, 0), 1);
+    end
     % actuator limits
     if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'actuator_limits')
         umax = 10; umin = -10;
@@ -928,6 +943,17 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
             umax = 10; umin = -10;
         end
     end
+
+    % Attack-aware observer used to reconstruct a clean feedback signal from
+    % the plant and sensor models. The controller closes the loop on this
+    % estimate instead of trusting an attacked measurement directly.
+    [Aobs, Bobs, Cobs, Dobs, Lobs, observer_ok] = build_recovery_observer(plant_ss, sensor_ss);
+    if observer_ok
+        zhat = zeros(size(Aobs,1),1);
+    else
+        zhat = [];
+    end
+    attack_est = 0;
     for k = 1:N
         if k == 1
             dt = t(1);
@@ -949,24 +975,63 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
         end
         y_meas = apply_attack_scalar(y_s, t(k), attack_cfg);
 
-        % After detection, transition the controller feedback from the attacked
-        % measurement to the internal plant estimate over a short recovery window.
-        % This preserves recovery without the aggressive feedforward that caused
-        % the earlier overshoot/oscillation regression.
-        if k < switch_index || ~isfinite(detection_time)
-            y_ctrl = y_meas;
-        elseif t(k) <= detection_time + recovery_time
-            beta = (t(k) - detection_time) / max(eps, recovery_time);
-            beta = min(max(beta, 0), 1);
-            y_ctrl = (1 - beta) * y_meas + beta * yk;
+        % Observer-based recovery: estimate the clean sensor output from the
+        % plant/sensor dynamics. Once an attack is detected, the controller
+        % stops trusting the attacked measurement directly and uses the
+        % observer output plus a filtered attack estimate instead.
+        if observer_ok
+            y_hat = Cobs * zhat + Dobs * u_prev;
+            innovation = y_meas - y_hat;
+            innovation = max(min(innovation, 1e6), -1e6);
+            if isfinite(detection_time) && t(k) >= detection_time
+                % After detection, suppress the influence of the corrupted
+                % measurement and let the observer dominate.
+                rec_gain = min(1, dt / max(eps, observer_recovery_time));
+                attack_est = (1 - rec_gain) * attack_est + rec_gain * innovation;
+                y_recovered = y_meas - attack_est;
+                y_ctrl = 0.8 * y_hat + 0.2 * y_recovered;
+                obs_gain = max(observer_min_gain, 1 - max(0, t(k) - detection_time) / observer_recovery_time);
+            else
+                % Before detection, stay measurement-driven so the observer
+                % remains synchronized with the nominal closed loop.
+                attack_est = 0;
+                y_ctrl = y_meas;
+                obs_gain = 1;
+            end
+            innovation_gain = min(1, observer_innovation_limit / max(observer_innovation_limit, abs(innovation)));
+            obs_gain = max(observer_min_gain, obs_gain * innovation_gain);
+            zhat = zhat + (Aobs * zhat + Bobs * u_prev + obs_gain * (Lobs * innovation)) * dt;
         else
-            y_ctrl = yk;
-        end
-
-        if k >= switch_index
-            if mode ~= 2
-                switch_times(end+1,:) = [t(k), mode, 2]; %#ok<AGROW>
-                mode = 2;
+            % Fallback if observer design fails: keep a conservative blended
+            % estimate using the attacked measurement and plant output.
+            if k < switch_index || ~isfinite(detection_time)
+                y_ctrl = y_meas;
+            elseif t(k) <= detection_time + recovery_time
+                beta = (t(k) - detection_time) / max(eps, recovery_time);
+                beta = min(max(beta, 0), 1);
+                y_ctrl = (1 - beta) * y_meas + beta * yk;
+            try
+                % Prefer a Kalman-style observer when available so recovery is
+                % less brittle than pure pole placement.
+                Gobs = eye(nobs);
+                Qn = 1e-3 * eye(nobs);
+                if size(Cobs,1) == 1
+                    Rn = 1e-2;
+                else
+                    Rn = 1e-2 * eye(size(Cobs,1));
+                end
+                Lobs = lqe(Aobs, Gobs, Cobs, Qn, Rn);
+            catch
+                try
+                    desired_poles = -max(2, nobs) - (0:nobs-1);
+                    Lobs = place(Aobs', Cobs', desired_poles)';
+                catch
+                    % fallback: try a slightly slower set of poles if the first set is
+                    % numerically awkward for the available observability structure.
+                    desired_poles = -max(2, nobs) - (0:nobs-1);
+                    Lobs = place(Aobs', Cobs', desired_poles)';
+                end
+            end
                 % Bumpless transfer: initialize PID state so the output matches
                 % the control effort already being applied by the 2DoF controller.
                 if nx_pidx > 0
@@ -1080,6 +1145,53 @@ function x = align_controller_state(ctrl_ss, input_value, desired_output, fallba
         end
     catch
         x = fallback_state;
+    end
+end
+
+function [Aobs, Bobs, Cobs, Dobs, Lobs, ok] = build_recovery_observer(plant_ss, sensor_ss)
+    % Build a full-order observer for the plant + sensor cascade so the
+    % controller can recover from a corrupted measurement by tracking the
+    % uncorrupted model output.
+    ok = false;
+    Aobs = []; Bobs = []; Cobs = []; Dobs = []; Lobs = [];
+    try
+        plant_ss = ss(plant_ss);
+        sensor_ss = ss(sensor_ss);
+
+        A = plant_ss.A; B = plant_ss.B; C = plant_ss.C; D = plant_ss.D;
+        As = sensor_ss.A; Bs = sensor_ss.B; Cs = sensor_ss.C; Ds = sensor_ss.D;
+
+        nplant = size(A,1);
+        nsensor = size(As,1);
+        Aobs = [A, zeros(nplant, nsensor); Bs * C, As];
+        Bobs = [B; Bs * D];
+        Cobs = [Ds * C, Cs];
+        Dobs = Ds * D;
+
+        nobs = size(Aobs,1);
+        if nobs == 0
+            return;
+        end
+
+        % Place observer poles faster than the plant dynamics but keep them
+        % real and well separated so the estimator converges quickly.
+        pole_base = max(4, 2 * nobs);
+        desired_poles = -pole_base - (0:nobs-1);
+        try
+            Lobs = place(Aobs', Cobs', desired_poles)';
+        catch
+            % fallback: try a slightly slower set of poles if the first set is
+            % numerically awkward for the available observability structure.
+            desired_poles = -max(2, nobs) - (0:nobs-1);
+            Lobs = place(Aobs', Cobs', desired_poles)';
+        end
+        if any(~isfinite(Lobs(:)))
+            return;
+        end
+        ok = true;
+    catch
+        ok = false;
+        Aobs = []; Bobs = []; Cobs = []; Dobs = []; Lobs = [];
     end
 end
 
