@@ -37,20 +37,36 @@ end
 
 % Phase 2: tuning and controller comparison
 try
-    if exist('avr_closedloop_2dof.m','file')
-        fprintf('Running avr_closedloop_2dof (Phase 2)...\n'); fprintf(runfid,'Running avr_closedloop_2dof...\n');
-        avr_closedloop_2dof();
-        fprintf(runfid,'avr_closedloop_2dof completed\n');
-        run_summary(end+1,:) = {'phase2','avr_closedloop_2dof','ok'};
-        % comparison plot
+    phase2mat = fullfile(phase_artifacts('phase2').mat, 'avr_phase2.mat');
+    if exist(phase2mat,'file')
+        fprintf('Phase 2 artifacts found (%s) — skipping avr_closedloop_2dof (PSO).\n', phase2mat);
+        fprintf(runfid,'Phase2 artifacts found (%s) — skipping avr_closedloop_2dof (PSO).\n', phase2mat);
+        run_summary(end+1,:) = {'phase2','avr_closedloop_2dof','skipped'};
+        % still run comparison plot if available
         if exist('avr_compare_controllers.m','file')
-            fprintf('Running avr_compare_controllers...\n'); fprintf(runfid,'Running avr_compare_controllers...\n');
-            avr_compare_controllers();
-            fprintf(runfid,'avr_compare_controllers completed\n');
+            try
+                fprintf('Running avr_compare_controllers...\n'); fprintf(runfid,'Running avr_compare_controllers...\n');
+                avr_compare_controllers();
+                fprintf(runfid,'avr_compare_controllers completed\n');
+            catch MEc
+                fprintf(runfid,'avr_compare_controllers failed: %s\n', MEc.message);
+            end
         end
     else
-        fprintf(runfid,'avr_closedloop_2dof not found - skipping Phase 2\n');
-        run_summary(end+1,:) = {'phase2','avr_closedloop_2dof','missing'};
+        if exist('avr_closedloop_2dof.m','file')
+            fprintf('Running avr_closedloop_2dof (Phase 2)...\n'); fprintf(runfid,'Running avr_closedloop_2dof...\n');
+            avr_closedloop_2dof();
+            fprintf(runfid,'avr_closedloop_2dof completed\n');
+            run_summary(end+1,:) = {'phase2','avr_closedloop_2dof','ok'};
+            if exist('avr_compare_controllers.m','file')
+                fprintf('Running avr_compare_controllers...\n'); fprintf(runfid,'Running avr_compare_controllers...\n');
+                avr_compare_controllers();
+                fprintf(runfid,'avr_compare_controllers completed\n');
+            end
+        else
+            fprintf(runfid,'avr_closedloop_2dof not found - skipping Phase 2\n');
+            run_summary(end+1,:) = {'phase2','avr_closedloop_2dof','missing'};
+        end
     end
 catch ME
     fprintf(runfid,'Phase2 failed: %s\n', ME.message);
@@ -117,6 +133,21 @@ end
 % Phase 5: full comparison and resilient validation (Phase 4 is exercised here)
 try
     if exist('phase5_full_comparison.m','file')
+        % Optional: run grid-search for recovery parameters first if available
+        if exist('phase5_grid_search_recovery.m','file')
+            try
+                fprintf('Running phase5_grid_search_recovery (grid search)...\n'); fprintf(runfid,'Running phase5_grid_search_recovery...\n');
+                phase5_grid_search_recovery();
+                fprintf(runfid,'phase5_grid_search_recovery completed\n');
+                run_summary(end+1,:) = {'phase5_grid_search_recovery','phase5_grid_search_recovery','ok'};
+            catch MEgs
+                fprintf(runfid,'phase5_grid_search_recovery failed: %s\n', MEgs.message);
+                run_summary(end+1,:) = {'phase5_grid_search_recovery','phase5_grid_search_recovery','failed'};
+            end
+        else
+            fprintf(runfid,'phase5_grid_search_recovery not found - skipping grid search\n');
+        end
+
         fprintf('Running phase5_full_comparison...\n'); fprintf(runfid,'Running phase5_full_comparison...\n');
         phase5_full_comparison();
         fprintf(runfid,'phase5_full_comparison completed\n'); fprintf(runfid,'phase5_full_comparison completed\n');

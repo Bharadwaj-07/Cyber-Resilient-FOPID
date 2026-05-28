@@ -136,8 +136,12 @@ scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency
 % Use a tighter detector here so Phase 5 separates attack cases earlier and
 % reduces quantized detection times in the anomaly summary.
 detector_cfg = struct('baseline_window',5,'window_size',50,'threshold_factor',3,'Q',1e-6,'R',1e-4,'min_consecutive',3,'startup_suppress',4.8,'confidence_cap',10);
-switcher_cfg = struct('hysteresis_time',2,'blend_time',0.5,'recovery_time',1.0,'actuator_limits',[-10 10],'initial_mode',1);
-    switcher_cfg.heuristic_switching_enabled = false;
+% Safer default switching: longer blend/recovery and tighter actuator limits
+% to avoid abrupt control jumps during bumpless transfer. Expose a
+% bumpless_reg regularization parameter used when aligning controller state.
+switcher_cfg = struct('hysteresis_time',2,'blend_time',1.5,'recovery_time',2.0,'actuator_limits',[-5 5],'initial_mode',1);
+switcher_cfg.bumpless_reg = 1e-3;
+switcher_cfg.heuristic_switching_enabled = false;
 
 % Prepare results table
 rows = {};
@@ -926,7 +930,13 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
                 % the control effort already being applied by the 2DoF controller.
                 if nx_pidx > 0
                     epid_now = r(k) - y_ctrl;
-                    xpid = align_controller_state(Cpid_ss, epid_now, u_prev, xpid);
+                    % Use configured regularization for bumpless alignment
+                    if isfield(switcher_cfg,'bumpless_reg')
+                        regval = switcher_cfg.bumpless_reg;
+                    else
+                        regval = [];
+                    end
+                    xpid = align_controller_state(Cpid_ss, epid_now, u_prev, xpid, regval);
                     % If the aligned PID output differs hugely from current effort,
                     % dampen integrator states to avoid immediate large jumps.
                     try
@@ -998,7 +1008,7 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
     end
 end
 
-function x = align_controller_state(ctrl_ss, input_value, desired_output, fallback_state)
+function x = align_controller_state(ctrl_ss, input_value, desired_output, fallback_state, reg)
     % Align controller state so ctrl_ss produces desired_output for the current input.
     % Uses a regularized least-squares solve when the direct mapping is not invertible.
     x = fallback_state;
@@ -1013,12 +1023,16 @@ function x = align_controller_state(ctrl_ss, input_value, desired_output, fallba
             x = zeros(size(fallback_state));
             return;
         end
+        % Use provided regularization if given, otherwise fall back to small default.
+        if nargin < 5 || isempty(reg)
+            reg = 1e-6;
+        end
         if size(Cc,1) == 1
-            denom = Cc * Cc.' + 1e-6;
+            denom = Cc * Cc.' + reg;
             x = (Cc.' / denom) * target;
         else
-            reg = 1e-6 * eye(size(Cc,2));
-            x = (Cc.' * Cc + reg) \ (Cc.' * target);
+            Regl = reg * eye(size(Cc,2));
+            x = (Cc.' * Cc + Regl) \ (Cc.' * target);
         end
         if any(~isfinite(x))
             x = fallback_state;
