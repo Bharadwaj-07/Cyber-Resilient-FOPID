@@ -125,6 +125,13 @@ pso_history_1dof = [];
 elapsed_1dof = 0;
 for sidx = 1:size(seed_bank_1dof,1)
     opts_1dof.seed = seed_bank_1dof(sidx,:);
+    if sidx == 2
+        opts_1dof.n_particles = 80;
+        opts_1dof.max_iter = 150;
+    else
+        opts_1dof.n_particles = opts.n_particles;
+        opts_1dof.max_iter = opts.max_iter;
+    end
     tic;
     [cand_params_1dof, cand_ITAE_1dof, cand_history_1dof] = pso_tuner(G_fwd, G_sen, opts_1dof);
     elapsed_1dof = elapsed_1dof + toc;
