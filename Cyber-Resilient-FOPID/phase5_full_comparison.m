@@ -230,7 +230,7 @@ for i = 1:length(scenarios)
         idx_sw = find(t >= switch_times(1,1), 1, 'first');
         if isempty(idx_sw), idx_sw = numel(t); end
         u_prev_sw = u_res(max(1, idx_sw-1));
-        u_post_sw = u_res(min(N, idx_sw));
+        u_post_sw = u_res(min(numel(u_res), idx_sw));
         u_jump = u_post_sw - u_prev_sw;
     else
         u_jump = NaN;

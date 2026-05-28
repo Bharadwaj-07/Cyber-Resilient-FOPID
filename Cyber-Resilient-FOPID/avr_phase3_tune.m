@@ -30,6 +30,7 @@ else
 end
 
 % Time and true response
+Tfinal = 25;
 t = 0:0.001:Tfinal; r = ones(size(t));
 [y_true, ~] = step(G_cl_2dof, t);
 
@@ -114,6 +115,14 @@ best_cfg = results_grid(best_idx);
 paths3 = phase_artifacts('phase3');
 save(fullfile(paths3.mat, 'results_tune_detector.mat'),'results_grid','best_cfg');
 
+try
+    summaryTable = table(best_cfg.threshold_factor, best_cfg.Q_scale, best_cfg.R_scale, best_cfg.total_score, ...
+        'VariableNames', {'threshold_factor','Q_scale','R_scale','total_score'});
+    writetable(summaryTable, fullfile(paths3.csv, 'phase3_tune_summary.csv'));
+catch ME
+    warning('Could not write Phase 3 tuning CSV summary: %s', ME.message);
+end
+
 % Report
 fprintf('Tuning complete across %d attacks. Best config: threshold_factor=%.2f, Q_scale=%.2f, R_scale=%.2f\n', length(attack_list), best_cfg.threshold_factor, best_cfg.Q_scale, best_cfg.R_scale);
 fprintf('Aggregate score = %.3f\n', best_cfg.total_score);
@@ -126,3 +135,24 @@ for aidx = 1:length(best_cfg.attack_infos)
 end
 
 fprintf('\nSuggested detector_config to use in Phase3: threshold_factor=%.2f, Q=%.1e, R=%.1e\n', best_cfg.threshold_factor, best_cfg.Q_scale*default_detector.Q, best_cfg.R_scale*default_detector.R);
+
+function C = zn_pid(G)
+    % Local Ziegler-Nichols-style fallback so Phase 3 does not depend on
+    % helpers defined in other scripts.
+    try
+        [Gm, ~, ~, Wcg] = margin(G);
+        if isempty(Gm) || isempty(Wcg) || ~isfinite(Gm) || ~isfinite(Wcg) || Gm <= 0 || Wcg <= 0
+            C = pidtune(G, 'PID');
+            return;
+        end
+
+        Ku = Gm;
+        Pu = 2*pi/Wcg;
+        Kp = 0.6*Ku;
+        Ki = 1.2*Ku/Pu;
+        Kd = 0.075*Ku*Pu;
+        C = pid(Kp, Ki, Kd);
+    catch
+        C = pidtune(G, 'PID');
+    end
+end
