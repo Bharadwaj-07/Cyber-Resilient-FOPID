@@ -3,6 +3,12 @@
 % Sweeps blend_time, recovery_time, bumpless_reg, actuator_limits and
 % evaluates per-scenario metrics (ITAE_res, y_res_final, u_jump, u_peak_rate).
 
+function phase5_grid_search_recovery()
+    addpath(pwd);
+    paths5 = phase_artifacts('phase5');
+    outcsv = fullfile(paths5.csv, 'phase5_grid_search_results.csv');
+    outmat = fullfile(paths5.mat, 'phase5_grid_search_results.mat');
+    
 addpath(pwd);
 paths5 = phase_artifacts('phase5');
 outcsv = fullfile(paths5.csv, 'phase5_grid_search_results.csv');
@@ -109,6 +115,9 @@ end
 T = struct2table(results);
 if ~exist(paths5.csv,'dir'), mkdir(paths5.csv); end
 writetable(T, outcsv);
+    save(outmat, 'results', 'T');
+    fprintf('Grid search complete. Results: %s and %s\n', outcsv, outmat);
+end
 save(outmat, 'results', 'T');
 fprintf('Grid search complete. Results: %s and %s\n', outcsv, outmat);
 

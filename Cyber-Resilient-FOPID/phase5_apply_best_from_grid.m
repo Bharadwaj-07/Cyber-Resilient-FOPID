@@ -49,5 +49,10 @@ best_cfg.recovery_time = chosen.recovery_time;
 best_cfg.bumpless_reg = chosen.bumpless_reg;
 best_cfg.actuator_limits = chosen.actuator_limits{1};
 
+% Write both a user-editable config and a locked config that Phase5 will
+% prioritize. The locked config ensures the selected settings are applied
+% consistently across runs until manually changed.
 save(outmat, '-struct', 'best_cfg');
-fprintf('Wrote Phase5 config to %s\n', outmat);
+lockedmat = fullfile(paths5.root, 'phase5_locked.mat');
+save(lockedmat, '-struct', 'best_cfg');
+fprintf('Wrote Phase5 config to %s and locked config to %s\n', outmat, lockedmat);

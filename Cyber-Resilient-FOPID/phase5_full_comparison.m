@@ -145,9 +145,26 @@ switcher_cfg.bumpless_reg = 1e-2;
 switcher_cfg.heuristic_switching_enabled = false;
 
 % Allow user-provided overrides via a small config MAT file created by the
-% grid-search helper (phase5_config.mat). This avoids editing the script.
+% grid-search helper (phase5_config.mat). A lockfile (phase5_locked.mat)
+% takes precedence and forces the selected settings to be used.
+lockfile = fullfile(paths5.root, 'phase5_locked.mat');
 cfgfile = fullfile(paths5.root, 'phase5_config.mat');
-if exist(cfgfile,'file')
+if exist(lockfile,'file')
+    try
+        L = load(lockfile);
+        f = fieldnames(L);
+        for ii = 1:numel(f)
+            if isfield(switcher_cfg, f{ii})
+                switcher_cfg.(f{ii}) = L.(f{ii});
+            elseif isfield(detector_cfg, f{ii})
+                detector_cfg.(f{ii}) = L.(f{ii});
+            end
+        end
+        fprintf(lf, 'Loaded locked Phase5 config from %s\n', lockfile);
+    catch MElock
+        fprintf(lf, 'Could not load %s: %s\n', lockfile, MElock.message);
+    end
+elseif exist(cfgfile,'file')
     try
         c = load(cfgfile);
         f = fieldnames(c);
