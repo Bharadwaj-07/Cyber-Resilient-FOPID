@@ -541,8 +541,16 @@ function y = simulate_closedloop_pid_euler(plant_ss, C_pid, t, r)
         if k==1, dt = t(1); else dt = t(k)-t(k-1); end
         ym = C * xp + D * u_prev;
         e = r(k) - ym;
-        u = Cc * xc + Dc * e;
-        xc = xc + (Ac * xc + Bc * e) * dt;
+        u_unclamped = Cc * xc + Dc * e;
+        % actuator limits default (sane bounds)
+        umax = 10; umin = -10;
+        u = min(max(u_unclamped, umin), umax);
+        % anti-windup: only integrate controller state when not saturated
+        if abs(u - u_unclamped) < 1e-9
+            xc = xc + (Ac * xc + Bc * e) * dt;
+        else
+            xc = xc + 0.1 * (Ac * xc + Bc * e) * dt;
+        end
         xp = xp + (A * xp + B * u) * dt;
         y(k) = C * xp + D * u;
         u_prev = u;
@@ -632,9 +640,14 @@ function y = simulate_closedloop_pid_euler_attacked(plant_ss, sensor_ss, C_pid, 
         end
         y_meas = apply_attack_scalar(y_s, t(k), attack_cfg);
         e = r(k) - y_meas;
-        uk = Cc * xc + Dc * e;
-
-        xc = xc + (Ac * xc + Bc * e) * dt;
+        u_unclamped = Cc * xc + Dc * e;
+        umax = 10; umin = -10;
+        uk = min(max(u_unclamped, umin), umax);
+        if abs(uk - u_unclamped) < 1e-9
+            xc = xc + (Ac * xc + Bc * e) * dt;
+        else
+            xc = xc + 0.1 * (Ac * xc + Bc * e) * dt;
+        end
         xp = xp + (A * xp + B * uk) * dt;
 
         y(k) = C * xp + D * uk;
@@ -840,12 +853,42 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
     else
         blend_time = switcher_cfg.blend_time;
     end
+    % recovery feed-forward parameters: temporary push to drive output back to setpoint
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'recovery_time')
+        recovery_time = 2.0; % seconds over which to apply recovery boost
+    else
+        recovery_time = switcher_cfg.recovery_time;
+    end
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'recovery_gain')
+        recovery_gain = 2.0; % scale of feedforward push
+    else
+        recovery_gain = switcher_cfg.recovery_gain;
+    end
     if isfinite(detection_time)
         blend_end_time = detection_time + max(0, blend_time);
         blend_end_index = find(t >= blend_end_time, 1, 'first');
         if isempty(blend_end_index), blend_end_index = switch_index; end
     else
         blend_end_time = NaN; blend_end_index = N + 1;
+    end
+    % compute recovery window indices
+    if isfinite(detection_time) && recovery_time > 0
+        recovery_end_time = detection_time + recovery_time;
+        recovery_end_index = find(t >= recovery_end_time, 1, 'first');
+        if isempty(recovery_end_index), recovery_end_index = min(N, switch_index + max(1, round(recovery_time / max(eps, t(2)-t(1))))); end
+    else
+        recovery_end_index = switch_index;
+    end
+    % actuator limits
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'actuator_limits')
+        umax = 10; umin = -10;
+    else
+        lim = switcher_cfg.actuator_limits;
+        if numel(lim) == 2
+            umin = lim(1); umax = lim(2);
+        else
+            umax = 10; umin = -10;
+        end
     end
 
     for k = 1:N
@@ -878,6 +921,17 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
                 if nx_pidx > 0
                     epid_now = r(k) - y_meas;
                     xpid = align_controller_state(Cpid_ss, epid_now, u_prev, xpid);
+                    % If the aligned PID output differs hugely from current effort,
+                    % dampen integrator states to avoid immediate large jumps.
+                    try
+                        pid_out_now = Cpm * xpid + Dp * epid_now;
+                        if ~isfinite(pid_out_now), pid_out_now = 0; end
+                        if abs(pid_out_now - u_prev) > 0.5 * max(1, abs(u_prev))
+                            xpid = 0.1 * xpid;
+                        end
+                    catch
+                        % ignore and keep aligned state
+                    end
                 end
             end
         end
@@ -905,7 +959,34 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
         end
 
         % blended control: uk = (1-alpha)*(ur - uy) + alpha * pid_out
-        uk = (1 - alpha) * (ur - uy) + alpha * pid_out;
+        uk_unclamped = (1 - alpha) * (ur - uy) + alpha * pid_out;
+
+        % Recovery feedforward during immediate post-detection window to push output
+        % back toward reference and avoid long integrator windup.
+        if k >= switch_index && k <= recovery_end_index && recovery_gain > 0
+            rec_scale = 1.0;
+            if recovery_end_index > switch_index
+                rec_scale = 1 - (t(k) - detection_time) / max(eps, (t(recovery_end_index) - detection_time));
+                rec_scale = min(max(rec_scale, 0), 1);
+            end
+            u_ff = rec_scale * recovery_gain * (r(k) - y_meas);
+            uk_unclamped = uk_unclamped + u_ff;
+        end
+
+        % apply actuator limits and anti-windup: if clamped, skip PID integrator update
+        uk = min(max(uk_unclamped, umin), umax);
+
+        % Recovery feedforward during immediate post-detection window to push output
+        % back toward reference and avoid long integrator windup-driven drift.
+        if k >= switch_index && k <= recovery_end_index && recovery_gain > 0
+            rec_scale = 1.0;
+            if recovery_end_index > switch_index
+                rec_scale = 1 - (t(k) - detection_time) / max(eps, (t(recovery_end_index) - detection_time));
+                rec_scale = min(max(rec_scale, 0), 1);
+            end
+            u_ff = rec_scale * recovery_gain * (r(k) - y_meas);
+            uk = uk + u_ff;
+        end
 
         % integrate controller states
         if ~isempty(Ar)
@@ -914,8 +995,15 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
         if ~isempty(Ay)
             xy = xy + (Ay * xy + By * y_meas) * dt;
         end
+        % anti-windup: skip PID integrator update when actuator is saturated
         if ~isempty(Ap)
-            xpid = xpid + (Ap * xpid + Bp * epid) * dt;
+            if abs(uk - uk_unclamped) < 1e-9
+                xpid = xpid + (Ap * xpid + Bp * epid) * dt;
+            else
+                % saturated: apply reduced integrator update (or none)
+                % small leakage to prevent integrator freezing
+                xpid = xpid + 0.1 * (Ap * xpid + Bp * epid) * dt;
+            end
         end
 
         xp = xp + (A * xp + B * uk) * dt;
@@ -1031,8 +1119,21 @@ function J = pid_attack_objective(x, plant_ss, sensor_ss, t, r, attack_cfg)
     Cpid = pid(Kp, Ki, Kd);
     try
         y = simulate_closedloop_pid_euler_attacked(plant_ss, sensor_ss, Cpid, t, r, attack_cfg);
-        J = safe_itae(y, t, 1e6);
-        if isnan(J), J = 1e12; end
+        itaev = safe_itae(y, t, 1e6);
+        if isnan(itaev), itaev = 1e12; end
+        % steady-state error penalty (final absolute error)
+        final_abs = abs(1 - y(end));
+        if ~isfinite(final_abs), final_abs = 1e3; end
+        % crude settling-time estimate: time after attack when error magnitude <= tol
+        tol = 0.02; settle_idx = find(abs(1 - y) > tol, 1, 'last');
+        if isempty(settle_idx)
+            settle_time = 0;
+        else
+            settle_time = t(min(length(t), settle_idx));
+        end
+        % weighted objective: ITAE + steady-state penalty + settling penalty
+        J = itaev + 1e3 * final_abs + 10 * settle_time;
+        if ~isfinite(J), J = 1e12; end
     catch
         J = 1e12;
     end
