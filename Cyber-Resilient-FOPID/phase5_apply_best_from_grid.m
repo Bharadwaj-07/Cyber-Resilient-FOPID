@@ -19,10 +19,58 @@ end
 % Support two CSV formats: a single cell-array column `actuator_limits`
 % or two numeric columns `actuator_limits_1` and `actuator_limits_2`.
 if ismember('actuator_limits', T.Properties.VariableNames)
-    limits_col = T.actuator_limits;
+    raw = T.actuator_limits;
+    % Normalize to cell array of two-element numeric vectors
+    nrows = height(T);
+    limits_col = cell(nrows,1);
+    if iscell(raw)
+        for i=1:nrows
+            v = raw{i};
+            if isnumeric(v) && numel(v)>=2
+                limits_col{i} = double(v(1:2));
+            elseif ischar(v) || isstring(v)
+                nums = regexp(char(v),'(-?\d+\.?\d*)','match');
+                if numel(nums)>=2
+                    limits_col{i} = [str2double(nums{1}), str2double(nums{2})];
+                elseif numel(nums)==1
+                    limits_col{i} = [str2double(nums{1}), str2double(nums{1})];
+                else
+                    limits_col{i} = [-inf, inf];
+                end
+            else
+                limits_col{i} = [-inf, inf];
+            end
+        end
+    elseif isstring(raw) || ischar(raw)
+        for i=1:nrows
+            s = char(raw(i));
+            nums = regexp(s,'(-?\d+\.?\d*)','match');
+            if numel(nums)>=2
+                limits_col{i} = [str2double(nums{1}), str2double(nums{2})];
+            elseif numel(nums)==1
+                limits_col{i} = [str2double(nums{1}), str2double(nums{1})];
+            else
+                limits_col{i} = [-inf, inf];
+            end
+        end
+    elseif isnumeric(raw)
+        % numeric array: if Nx2, split into rows; if Nx1, duplicate
+        if size(raw,2) >= 2
+            for i=1:nrows, limits_col{i} = double(raw(i,1:2)); end
+        else
+            for i=1:nrows, limits_col{i} = [double(raw(i)), double(raw(i))]; end
+        end
+    else
+        for i=1:nrows, limits_col{i} = [-inf, inf]; end
+    end
 elseif ismember('actuator_limits_1', T.Properties.VariableNames) && ismember('actuator_limits_2', T.Properties.VariableNames)
     % combine numeric columns into cell array of [min max]
-    limits_col = arrayfun(@(a,b) { [a b] }, T.actuator_limits_1, T.actuator_limits_2);
+    nrows = height(T);
+    limits_col = cell(nrows,1);
+    for i=1:nrows
+        a = T.actuator_limits_1(i); b = T.actuator_limits_2(i);
+        limits_col{i} = [double(a), double(b)];
+    end
 else
     error('Grid results missing actuator limits columns (expected actuator_limits or actuator_limits_1/2)');
 end
