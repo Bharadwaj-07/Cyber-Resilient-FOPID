@@ -26,14 +26,21 @@ det_cfg = struct('baseline_window',5,'window_size',50,'threshold_factor',3,'min_
 y_2dof_sc = simulate_closedloop_2dof_euler_attacked(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, t, r, attack_cfg);
 [attack_flag, confidence, detection_time, residuals] = direct_baseline_detector(y_2dof_sc, y_2dof_sc, t, det_cfg);
 
-% Run resilient sim with observer
-cfg = struct('blend_time',1.5,'recovery_time',2.0,'bumpless_reg',1e-2,'actuator_limits',[-5 5],'observer_recovery_time',2.0,'observer_innovation_limit',0.05,'observer_min_gain',0.02);
-[u_res, mode_hist, switch_times, y_res] = simulate_resilient_closedloop_euler(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, cfg);
+% Run resilient sim with attack isolation + dedicated compensator
+cfg = struct('blend_time',1.0,'recovery_time',2.0,'bumpless_reg',1e-2,'actuator_limits',[-5 5],'isolation_tau',0.25,'compensator_gain',0.8,'compensator_tau',1.0,'compensator_limit',5,'observer_recovery_time',2.0,'observer_innovation_limit',0.05,'observer_min_gain',0.02);
+[u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, cfg);
 
 % Diagnostics
 itae_res = safe_itae(y_res, t, 1e6);
 u_peak_rate = max(abs(diff(u_res))) / max(eps, t(2)-t(1));
+attack_est_end = NaN; u_comp_peak = NaN;
+if exist('diag','var') && isfield(diag,'attack_est_hist') && ~isempty(diag.attack_est_hist)
+    attack_est_end = diag.attack_est_hist(end);
+end
+if exist('diag','var') && isfield(diag,'u_comp_hist') && ~isempty(diag.u_comp_hist)
+    u_comp_peak = max(abs(diag.u_comp_hist));
+end
 
-res.out = struct('itae_res',itae_res,'u_peak_rate',u_peak_rate,'detection_time',detection_time,'attack_flag',attack_flag);
+res.out = struct('itae_res',itae_res,'u_peak_rate',u_peak_rate,'attack_est_end',attack_est_end,'u_comp_peak',u_comp_peak,'detection_time',detection_time,'attack_flag',attack_flag);
 save(fullfile(paths5.mat,'observer_test.mat'),'res');
 end

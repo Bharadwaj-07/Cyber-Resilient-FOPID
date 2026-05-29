@@ -307,6 +307,52 @@ for i = 1:length(scenarios)
     else
         row_obs_gain_mean = NaN;
     end
+    if exist('diag','var') && isfield(diag,'y_iso_hist') && ~isempty(diag.y_iso_hist)
+        row_y_iso_end = safe_scalar(diag.y_iso_hist(end), 1e6);
+    else
+        row_y_iso_end = NaN;
+    end
+    if exist('diag','var') && isfield(diag,'u_comp_hist') && ~isempty(diag.u_comp_hist)
+        row_u_comp_peak = safe_scalar(max(abs(diag.u_comp_hist)), 1e6);
+    else
+        row_u_comp_peak = NaN;
+    end
+    if exist('diag','var') && isfield(diag,'isolation_conf_hist') && ~isempty(diag.isolation_conf_hist)
+        row_iso_conf_mean = safe_scalar(mean(diag.isolation_conf_hist), 1e6);
+    else
+        row_iso_conf_mean = NaN;
+    end
+
+    if exist('diag','var') && isfield(diag,'attack_est_hist') && ~isempty(diag.attack_est_hist)
+        attack_est_hist = diag.attack_est_hist;
+    else
+        attack_est_hist = [];
+    end
+    if exist('diag','var') && isfield(diag,'y_hat_hist') && ~isempty(diag.y_hat_hist)
+        y_hat_hist = diag.y_hat_hist;
+    else
+        y_hat_hist = [];
+    end
+    if exist('diag','var') && isfield(diag,'obs_gain_hist') && ~isempty(diag.obs_gain_hist)
+        obs_gain_hist = diag.obs_gain_hist;
+    else
+        obs_gain_hist = [];
+    end
+    if exist('diag','var') && isfield(diag,'y_iso_hist') && ~isempty(diag.y_iso_hist)
+        y_iso_hist = diag.y_iso_hist;
+    else
+        y_iso_hist = [];
+    end
+    if exist('diag','var') && isfield(diag,'u_comp_hist') && ~isempty(diag.u_comp_hist)
+        u_comp_hist = diag.u_comp_hist;
+    else
+        u_comp_hist = [];
+    end
+    if exist('diag','var') && isfield(diag,'isolation_conf_hist') && ~isempty(diag.isolation_conf_hist)
+        isolation_conf_hist = diag.isolation_conf_hist;
+    else
+        isolation_conf_hist = [];
+    end
 
     info2 = safe_stepinfo(y_2dof_sc, t);
     infoP = safe_stepinfo(y_pid_sc, t);
@@ -314,7 +360,7 @@ for i = 1:length(scenarios)
 
     % Save per-scenario MAT and plot in the phase-specific artifact folders
     fname = fullfile(matdir, [sc.name '.mat']);
-    save(fname, 'sc', 'y_true', 'y_meas', 'residuals', 'attack_flag', 'detection_time', 'detection_delay', 'u_res', 'mode_hist', 'switch_times', 'y_res', 'metrics', 'attack_est_hist', 'y_hat_hist', 'obs_gain_hist');
+    save(fname, 'sc', 'y_true', 'y_meas', 'residuals', 'attack_flag', 'detection_time', 'detection_delay', 'u_res', 'mode_hist', 'switch_times', 'y_res', 'metrics', 'attack_est_hist', 'y_hat_hist', 'obs_gain_hist', 'y_iso_hist', 'u_comp_hist', 'isolation_conf_hist');
     fprintf(lf, 'Saved results: %s\n', fname);
 
     % plot - include measured (attacked) signal, control action, and mark attack start
@@ -393,6 +439,9 @@ for i = 1:length(scenarios)
     row.attack_est_max = row_attack_est_max;
     row.attack_est_end = row_attack_est_end;
     row.obs_gain_mean = row_obs_gain_mean;
+    row.y_iso_end = row_y_iso_end;
+    row.u_comp_peak = row_u_comp_peak;
+    row.iso_conf_mean = row_iso_conf_mean;
     rows{end+1} = row;
 end
 
@@ -933,6 +982,21 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
     else
         recovery_time = switcher_cfg.recovery_time;
     end
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'isolation_tau')
+        isolation_tau = max(0.25, 0.5 * recovery_time);
+    else
+        isolation_tau = max(eps, switcher_cfg.isolation_tau);
+    end
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'compensator_gain')
+        compensator_gain = 0.8;
+    else
+        compensator_gain = switcher_cfg.compensator_gain;
+    end
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'compensator_tau')
+        compensator_tau = max(0.5, recovery_time);
+    else
+        compensator_tau = max(eps, switcher_cfg.compensator_tau);
+    end
     if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'observer_recovery_time')
         observer_recovery_time = max(1.0, recovery_time);
     else
@@ -959,10 +1023,15 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
             umax = 10; umin = -10;
         end
     end
+    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'compensator_limit')
+        compensator_limit = max(abs([umin, umax]));
+    else
+        compensator_limit = max(eps, switcher_cfg.compensator_limit);
+    end
 
     % Attack-aware observer used to reconstruct a clean feedback signal from
-    % the plant and sensor models. The controller closes the loop on this
-    % estimate instead of trusting an attacked measurement directly.
+    % the plant and sensor models. The recovery path explicitly isolates the
+    % attack, then injects a dedicated compensator on top of the cleaned loop.
     [Aobs, Bobs, Cobs, Dobs, Lobs, observer_ok] = build_recovery_observer(plant_ss, sensor_ss);
     if observer_ok
         zhat = zeros(size(Aobs,1),1);
@@ -970,10 +1039,15 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
         zhat = [];
     end
     attack_est = 0;
+    comp_state = 0;
     % diagnostics histories for post-mortem analysis
     attack_est_hist = zeros(N,1);
     y_hat_hist = zeros(N,1);
     obs_gain_hist = zeros(N,1);
+    y_iso_hist = zeros(N,1);
+    u_comp_hist = zeros(N,1);
+    isolation_conf_hist = zeros(N,1);
+    switch_recorded = false;
 
     for k = 1:N
         if k == 1
@@ -996,27 +1070,33 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
         end
         y_meas = apply_attack_scalar(y_s, t(k), attack_cfg);
 
-        % Observer-based recovery: estimate the clean sensor output from the
-        % plant/sensor dynamics. Once an attack is detected, the controller
-        % stops trusting the attacked measurement directly and uses the
-        % observer output plus a filtered attack estimate instead.
+        % Observer-based recovery: isolate the attack from the measured
+        % signal, then drive a dedicated compensator with the isolated
+        % estimate. This keeps the nominal loop on a cleaned measurement
+        % rather than continuously blending against the attacked output.
         if observer_ok
             y_hat = Cobs * zhat + Dobs * u_prev;
             innovation = y_meas - y_hat;
             innovation = max(min(innovation, 1e6), -1e6);
             if isfinite(detection_time) && t(k) >= detection_time
-                % After detection, suppress the influence of the corrupted
-                % measurement and let the observer dominate.
-                rec_gain = min(1, dt / max(eps, observer_recovery_time));
-                attack_est = (1 - rec_gain) * attack_est + rec_gain * innovation;
-                y_recovered = y_meas - attack_est;
-                y_ctrl = 0.8 * y_hat + 0.2 * y_recovered;
+                % After detection, isolate the attack with a low-pass estimate
+                % of the innovation and use that isolated signal to steer a
+                % dedicated compensator.
+                iso_gain = min(1, dt / max(eps, isolation_tau));
+                attack_est = (1 - iso_gain) * attack_est + iso_gain * innovation;
+                y_iso = y_meas - attack_est;
+                isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
+                y_ctrl = (1 - isolation_conf) * y_meas + isolation_conf * y_iso;
+                comp_state = comp_state + (compensator_gain * attack_est - comp_state) * dt / max(eps, compensator_tau);
                 obs_gain = max(observer_min_gain, 1 - max(0, t(k) - detection_time) / observer_recovery_time);
             else
                 % Before detection, stay measurement-driven so the observer
                 % remains synchronized with the nominal closed loop.
                 attack_est = 0;
+                comp_state = 0;
+                y_iso = y_meas;
                 y_ctrl = y_meas;
+                isolation_conf = 0;
                 obs_gain = 1;
             end
             innovation_gain = min(1, observer_innovation_limit / max(observer_innovation_limit, abs(innovation)));
@@ -1026,8 +1106,15 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
             attack_est_hist(k) = attack_est;
             y_hat_hist(k) = y_hat;
             obs_gain_hist(k) = obs_gain;
+            y_iso_hist(k) = y_iso;
+            isolation_conf_hist(k) = isolation_conf;
+            u_comp_hist(k) = max(min(-comp_state, compensator_limit), -compensator_limit);
+            if ~switch_recorded && isfinite(detection_time) && t(k) >= detection_time
+                switch_times = [t(k), 1, 2];
+                switch_recorded = true;
+            end
         else
-            % Fallback if observer design fails: keep a conservative blended
+            % Fallback if observer design fails: keep a conservative, isolated
             % estimate using the attacked measurement and plant output.
             if k < switch_index || ~isfinite(detection_time)
                 y_ctrl = y_meas;
@@ -1038,33 +1125,57 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
             else
                 y_ctrl = yk;
             end
+            y_iso = y_ctrl;
+            isolation_conf = 0;
+            attack_est = y_meas - y_ctrl;
+            comp_state = 0;
+            u_comp_hist(k) = 0;
+            y_iso_hist(k) = y_iso;
+            isolation_conf_hist(k) = isolation_conf;
+            if ~switch_recorded && isfinite(detection_time) && t(k) >= detection_time
+                switch_times = [t(k), 1, 3];
+                switch_recorded = true;
+            end
         end
+        if observer_ok
+            if isfinite(detection_time) && t(k) >= detection_time
+                mode = 2;
+            else
+                mode = 1;
+            end
+        else
+            if isfinite(detection_time) && t(k) >= detection_time
+                mode = 3;
+            else
+                mode = 1;
+            end
         end
         mode_history(k) = mode;
 
         % Always update both controller internal states so outputs are ready
-        % for blending and to avoid state freezes when inactive.
+        % for recovery and to avoid state freezes when inactive.
         ur = Crm * xr + Dr * r(k);
         uy = Cym * xy + Dy * y_ctrl;
         epid = r(k) - y_ctrl;
         pid_out = Cpm * xpid + Dp * epid;
 
-        % Determine blending alpha (0 = 2DoF only, 1 = PID only)
-        if k < switch_index
-            alpha = 0;
-        elseif k >= switch_index && k < blend_end_index
-            if isnan(blend_time) || blend_time <= 0
-                alpha = 1;
+        % Nominal control uses the isolated measurement. The compensator adds
+        % a bounded correction from the estimated attack, so recovery is not
+        % just a time-based blend.
+        uk_nominal = ur - uy;
+        if observer_ok
+            if isfinite(detection_time) && t(k) >= detection_time
+                uk_unclamped = uk_nominal + max(min(-comp_state, compensator_limit), -compensator_limit);
             else
-                alpha = (t(k) - detection_time) / max(eps, blend_time);
-                alpha = min(max(alpha,0),1);
+                uk_unclamped = uk_nominal;
             end
         else
-            alpha = 1;
+            if isfinite(detection_time) && t(k) >= detection_time
+                uk_unclamped = pid_out;
+            else
+                uk_unclamped = uk_nominal;
+            end
         end
-
-        % blended control: uk = (1-alpha)*(ur - uy) + alpha * pid_out
-        uk_unclamped = (1 - alpha) * (ur - uy) + alpha * pid_out;
 
         % apply actuator limits and anti-windup: if clamped, skip PID integrator update
         uk = min(max(uk_unclamped, umin), umax);
@@ -1101,10 +1212,16 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
         diag.attack_est_hist = attack_est_hist;
         diag.y_hat_hist = y_hat_hist;
         diag.obs_gain_hist = obs_gain_hist;
+        diag.y_iso_hist = y_iso_hist;
+        diag.u_comp_hist = u_comp_hist;
+        diag.isolation_conf_hist = isolation_conf_hist;
     catch
         diag.attack_est_hist = [];
         diag.y_hat_hist = [];
         diag.obs_gain_hist = [];
+        diag.y_iso_hist = [];
+        diag.u_comp_hist = [];
+        diag.isolation_conf_hist = [];
     end
 end
 
