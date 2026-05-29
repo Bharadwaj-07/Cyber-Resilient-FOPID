@@ -80,6 +80,11 @@ if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cf
 else
     observer_min_gain = min(max(switcher_cfg.observer_min_gain, 0), 1);
 end
+if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'anti_windup_gain')
+    anti_windup_gain = 10.0;
+else
+    anti_windup_gain = max(0, switcher_cfg.anti_windup_gain);
+end
 if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'actuator_limits')
     umax = 10; umin = -10;
 else
@@ -149,7 +154,10 @@ for k = 1:N
                     y_iso = y_hat;
                 end
             isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
-            y_ctrl = y_iso;
+                % Blend isolated measurement and observer estimate according
+                % to isolation confidence to avoid trusting an implausible
+                % isolated value outright.
+                y_ctrl = isolation_conf * y_iso + (1 - isolation_conf) * y_hat;
             obs_gain = max(observer_min_gain, 1 - max(0, t(k) - detection_time) / observer_recovery_time);
             mode = 3;
         else
@@ -215,7 +223,15 @@ for k = 1:N
     pid_out = Cpm * xpid + Dp * epid;
 
     if mode == 3
-        uk_unclamped = pid_out;
+        % Smoothly blend into recovery controller over blend_time to avoid
+        % abrupt control actions that can drive the plant into saturation.
+        if isfinite(detection_time) && t(k) >= detection_time && isfinite(blend_end_time) && t(k) <= blend_end_time && blend_time > 0
+            beta = (t(k) - detection_time) / max(eps, blend_time);
+            beta = min(max(beta, 0), 1);
+            uk_unclamped = beta * pid_out + (1 - beta) * (ur - uy);
+        else
+            uk_unclamped = pid_out;
+        end
     else
         uk_unclamped = ur - uy;
     end
@@ -229,10 +245,12 @@ for k = 1:N
         xy = xy + (Ay * xy + By * y_ctrl) * dt;
     end
     if ~isempty(Ap)
-        if abs(uk - uk_unclamped) < 1e-9
-            xpid = xpid + (Ap * xpid + Bp * epid) * dt;
+        sat_err = uk - uk_unclamped;
+        epid_eff = epid + anti_windup_gain * sat_err;
+        if abs(sat_err) < 1e-9
+            xpid = xpid + (Ap * xpid + Bp * epid_eff) * dt;
         else
-            xpid = xpid + 0.1 * (Ap * xpid + Bp * epid) * dt;
+            xpid = xpid + 0.1 * (Ap * xpid + Bp * epid_eff) * dt;
         end
     end
 
