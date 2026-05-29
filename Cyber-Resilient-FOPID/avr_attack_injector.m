@@ -9,6 +9,9 @@ function y_meas = avr_attack_injector(y_true, t, attack_config)
 %   .slope (float)      % for ramp
 %   .frequency (float)  % for sine
 %   .start_time (float) % attack start time
+%   .burst_on_time (float)  % optional active duration for repeated attacks
+%   .burst_off_time (float) % optional gap between bursts
+%   .burst_cycles (int)     % optional number of repetitions
 %
 if nargin < 3 || isempty(attack_config)
     attack_config.enabled = false;
@@ -53,13 +56,34 @@ if isempty(idx)
     return;
 end
 
+attack_start_time = attack_config.start_time;
+active = true;
+if isfield(attack_config,'burst_on_time') && isfield(attack_config,'burst_off_time') && attack_config.burst_on_time > 0 && attack_config.burst_off_time >= 0
+    period = attack_config.burst_on_time + attack_config.burst_off_time;
+    if period > 0
+        cycle_idx = floor((t - attack_config.start_time) / period);
+        if isfield(attack_config,'burst_cycles') && ~isempty(attack_config.burst_cycles) && cycle_idx >= attack_config.burst_cycles
+            active = false;
+        elseif t >= attack_config.start_time
+            cycle_t = t - attack_config.start_time - cycle_idx * period;
+            active = cycle_t <= attack_config.burst_on_time;
+            attack_start_time = attack_config.start_time + cycle_idx * period;
+        end
+    end
+end
+
+if ~active
+    y_meas = y_true;
+    return;
+end
+
 switch lower(attack_config.type)
     case 'bias'
         a(idx:end) = attack_config.magnitude;
     case 'ramp'
-        a(idx:end) = attack_config.slope * (t(idx:end) - t(idx));
+        a(idx:end) = attack_config.slope * (t(idx:end) - attack_start_time);
     case 'sine'
-        phase = t(idx:end) - t(idx);
+        phase = t(idx:end) - attack_start_time;
         a(idx:end) = attack_config.magnitude * sin(2*pi*attack_config.frequency .* phase);
     otherwise
         error('Unknown attack type: %s', attack_config.type);

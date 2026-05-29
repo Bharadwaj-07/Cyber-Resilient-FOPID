@@ -358,6 +358,24 @@ end
 if t < attack_cfg.start_time
     return;
 end
+attack_start_time = attack_cfg.start_time;
+active = true;
+if isfield(attack_cfg,'burst_on_time') && isfield(attack_cfg,'burst_off_time') && attack_cfg.burst_on_time > 0 && attack_cfg.burst_off_time >= 0
+    period = attack_cfg.burst_on_time + attack_cfg.burst_off_time;
+    if period > 0
+        cycle_idx = floor((t - attack_cfg.start_time) / period);
+        if isfield(attack_cfg,'burst_cycles') && ~isempty(attack_cfg.burst_cycles) && cycle_idx >= attack_cfg.burst_cycles
+            active = false;
+        else
+            cycle_t = t - attack_cfg.start_time - cycle_idx * period;
+            active = cycle_t <= attack_cfg.burst_on_time;
+            attack_start_time = attack_cfg.start_time + cycle_idx * period;
+        end
+    end
+end
+if ~active
+    return;
+end
 switch lower(string(attack_cfg.type))
     case "bias"
         if isfield(attack_cfg, 'magnitude')
@@ -365,14 +383,14 @@ switch lower(string(attack_cfg.type))
         end
     case "ramp"
         if isfield(attack_cfg, 'slope')
-            y_attack = y + attack_cfg.slope * (t - attack_cfg.start_time);
+            y_attack = y + attack_cfg.slope * (t - attack_start_time);
         end
     case "sine"
         amp = 0;
         freq = 1;
         if isfield(attack_cfg, 'magnitude'), amp = attack_cfg.magnitude; end
         if isfield(attack_cfg, 'frequency'), freq = attack_cfg.frequency; end
-        y_attack = y + amp * sin(2*pi*freq*(t - attack_cfg.start_time));
+        y_attack = y + amp * sin(2*pi*freq*(t - attack_start_time));
     otherwise
         y_attack = y;
 end

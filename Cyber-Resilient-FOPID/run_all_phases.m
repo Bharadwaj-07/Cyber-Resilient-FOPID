@@ -162,6 +162,38 @@ try
             fprintf(runfid,'phase5_grid_search_recovery not found - skipping grid search\n');
         end
 
+        % Run the top-3 evaluator if available. This gives a deeper per-scenario
+        % comparison of the candidate configs before the final comparison pass.
+        if exist('phase5_evaluate_top3_from_grid.m','file')
+            try
+                fprintf('Running phase5_evaluate_top3_from_grid...\n'); fprintf(runfid,'Running phase5_evaluate_top3_from_grid...\n');
+                phase5_evaluate_top3_from_grid();
+                fprintf(runfid,'phase5_evaluate_top3_from_grid completed\n');
+                run_summary(end+1,:) = {'phase5_evaluate_top3_from_grid','phase5_evaluate_top3_from_grid','ok'};
+            catch MEeval
+                fprintf(runfid,'phase5_evaluate_top3_from_grid failed: %s\n', MEeval.message);
+                run_summary(end+1,:) = {'phase5_evaluate_top3_from_grid','phase5_evaluate_top3_from_grid','failed'};
+            end
+        else
+            fprintf(runfid,'phase5_evaluate_top3_from_grid not found - skipping top-3 evaluation\n');
+        end
+
+        % Run the gap-vs-continuous assessment so the pipeline captures the
+        % repeated-attack-with-recovery-gaps scenario separately.
+        if exist('phase5_assess_gap_attacks.m','file')
+            try
+                fprintf('Running phase5_assess_gap_attacks...\n'); fprintf(runfid,'Running phase5_assess_gap_attacks...\n');
+                phase5_assess_gap_attacks();
+                fprintf(runfid,'phase5_assess_gap_attacks completed\n');
+                run_summary(end+1,:) = {'phase5_assess_gap_attacks','phase5_assess_gap_attacks','ok'};
+            catch MEgap
+                fprintf(runfid,'phase5_assess_gap_attacks failed: %s\n', MEgap.message);
+                run_summary(end+1,:) = {'phase5_assess_gap_attacks','phase5_assess_gap_attacks','failed'};
+            end
+        else
+            fprintf(runfid,'phase5_assess_gap_attacks not found - skipping gap attack assessment\n');
+        end
+
         fprintf('Running phase5_full_comparison...\n'); fprintf(runfid,'Running phase5_full_comparison...\n');
         phase5_full_comparison();
         fprintf(runfid,'phase5_full_comparison completed\n'); fprintf(runfid,'phase5_full_comparison completed\n');
