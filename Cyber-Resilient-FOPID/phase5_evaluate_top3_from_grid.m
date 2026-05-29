@@ -14,6 +14,28 @@ T = readtable(csvp);
 % Build a unique key per config
 n = height(T);
 keys = strings(n,1);
+% Ensure numeric columns exist
+numericCols = {'blend_time','recovery_time','isolation_tau','Q_scale','R_scale','itae_res','u_jump','u_peak_rate'};
+for ci = 1:numel(numericCols)
+    c = numericCols{ci};
+    if ~ismember(c, T.Properties.VariableNames)
+        T.(c) = nan(height(T),1);
+    else
+        try
+            T.(c) = double(T.(c));
+        catch
+            if iscell(T.(c))
+                tmp = nan(height(T),1);
+                for ii=1:height(T)
+                    try tmp(ii)=double(T.(c){ii}); catch tmp(ii)=nan; end
+                end
+                T.(c)=tmp;
+            else
+                T.(c)=nan(height(T),1);
+            end
+        end
+    end
+end
 for i=1:n
     % assemble actuator limits for key (support two CSV formats)
     if ismember('actuator_limits', T.Properties.VariableNames)

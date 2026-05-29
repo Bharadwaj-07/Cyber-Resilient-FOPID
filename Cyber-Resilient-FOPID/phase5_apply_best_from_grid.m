@@ -65,6 +65,31 @@ if ~isempty(missing)
     error('Grid results missing required columns: %s', strjoin(missing, ', '));
 end
 
+% Ensure numeric columns exist and are doubles to avoid splitapply/mean issues
+numericCols = {'blend_time','recovery_time','bumpless_reg','isolation_tau','Q_scale','R_scale','itae_res','u_jump','u_peak_rate'};
+for ci = 1:numel(numericCols)
+    c = numericCols{ci};
+    if ~ismember(c, T.Properties.VariableNames)
+        T.(c) = nan(height(T),1);
+    else
+        try
+            T.(c) = double(T.(c));
+        catch
+            % convert cell or string to numeric
+            col = T.(c);
+            if iscell(col)
+                tmp = nan(height(T),1);
+                for ii=1:height(T)
+                    try tmp(ii) = double(col{ii}); catch tmp(ii)=nan; end
+                end
+                T.(c) = tmp;
+            else
+                T.(c) = nan(height(T),1);
+            end
+        end
+    end
+end
+
 % Support two CSV formats: a single cell-array column `actuator_limits`
 % or two numeric columns `actuator_limits_1` and `actuator_limits_2`.
 if ismember('actuator_limits', T.Properties.VariableNames)
@@ -131,6 +156,14 @@ end
 
 limits_key = cellfun(@(c) sprintf('%g_%g', c(1), c(2)), limits_col, 'UniformOutput', false);
 T.key = strcat(string(T.blend_time), '_', string(T.recovery_time), '_', string(T.bumpless_reg), '_', string(T.isolation_tau), '_', string(limits_key));
+
+% Diagnostics: log table shape and key/limits info to help debug assignment issues
+fprintf('phase5_apply_best_from_grid: T rows=%d, cols=%d\n', height(T), width(T));
+fprintf('phase5_apply_best_from_grid: vars = %s\n', strjoin(T.Properties.VariableNames, ', '));
+fprintf('phase5_apply_best_from_grid: limits_col length=%d\n', numel(limits_col));
+if numel(limits_col) >= 1 && isnumeric(limits_col{1}) && numel(limits_col{1})>=2
+    fprintf('phase5_apply_best_from_grid: sample limits[1]=[%g %g]\n', limits_col{1}(1), limits_col{1}(2));
+end
 
 [G, key_list] = findgroups(T.key);
 mean_itae = splitapply(@mean, T.itae_res, G);
