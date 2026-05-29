@@ -136,8 +136,8 @@ try
         % Run quick 2-DoF/resilient diagnostic before Phase5
         if exist('phase5_check_2dof.m','file')
             try
-                fprintf('Running phase5_check_2dof diagnostic...
-'); fprintf(runfid,'Running phase5_check_2dof diagnostic...\n');
+                fprintf('Running phase5_check_2dof diagnostic...')
+                fprintf(runfid,']Running phase5_check_2dof diagnostic...\n');
                 phase5_check_2dof();
                 fprintf(runfid,'phase5_check_2dof completed\n');
                 run_summary(end+1,:) = {'phase5_check_2dof','phase5_check_2dof','ok'};
