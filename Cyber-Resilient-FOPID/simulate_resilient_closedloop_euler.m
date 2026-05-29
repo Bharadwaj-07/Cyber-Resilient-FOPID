@@ -309,44 +309,6 @@ diag.u_comp_hist = u_comp_hist;
 diag.isolation_conf_hist = isolation_conf_hist;
 end
 
-function [Aobs, Bobs, Cobs, Dobs, Lobs, ok] = build_recovery_observer(plant_ss, sensor_ss)
-ok = false;
-Aobs = []; Bobs = []; Cobs = []; Dobs = []; Lobs = [];
-try
-    plant_ss = ss(plant_ss);
-    sensor_ss = ss(sensor_ss);
-
-    A = plant_ss.A; B = plant_ss.B; C = plant_ss.C; D = plant_ss.D;
-    As = sensor_ss.A; Bs = sensor_ss.B; Cs = sensor_ss.C; Ds = sensor_ss.D;
-
-    nplant = size(A,1);
-    nsensor = size(As,1);
-    Aobs = [A, zeros(nplant, nsensor); Bs * C, As];
-    Bobs = [B; Bs * D];
-    Cobs = [Ds * C, Cs];
-    Dobs = Ds * D;
-
-    nobs = size(Aobs,1);
-    if nobs == 0
-        return;
-    end
-
-    pole_base = max(4, 2 * nobs);
-    desired_poles = -pole_base - (0:nobs-1);
-    try
-        Lobs = place(Aobs', Cobs', desired_poles)';
-    catch
-        desired_poles = -max(2, nobs) - (0:nobs-1);
-        Lobs = place(Aobs', Cobs', desired_poles)';
-    end
-    if any(~isfinite(Lobs(:)))
-        return;
-    end
-    ok = true;
-catch
-    ok = false;
-    Aobs = []; Bobs = []; Cobs = []; Dobs = []; Lobs = [];
-end
 function y_attack = apply_attack_scalar(y, t, attack_cfg)
 y_attack = y;
 if nargin < 3 || isempty(attack_cfg) || ~isfield(attack_cfg, 'enabled') || ~attack_cfg.enabled

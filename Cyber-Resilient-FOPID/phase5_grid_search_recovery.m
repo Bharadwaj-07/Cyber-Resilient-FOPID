@@ -45,35 +45,37 @@ for ib = 1:numel(blend_list)
                 for irs = 1:numel(R_scale_list)
                     for ia = 1:numel(act_limits)
                         cfg = struct('blend_time',blend_list(ib),'recovery_time',recovery_list(ir),'bumpless_reg',1e-3,'isolation_tau',isolation_list(ii),'observer_recovery_time',recovery_list(ir),'observer_innovation_limit',0.05,'observer_min_gain',0.02,'Q_scale',Q_scale_list(iq),'R_scale',R_scale_list(irs),'actuator_limits',act_limits{ia});
-                for is = 1:numel(scenarios)
-                    sc = scenarios{is};
-                    attack_cfg = struct('enabled',true,'type',sc.type,'start_time',sc.start_time);
-                    if isfield(sc,'magnitude'), attack_cfg.magnitude = sc.magnitude; end
-                    if isfield(sc,'slope'), attack_cfg.slope = sc.slope; end
-                    if isfield(sc,'frequency'), attack_cfg.frequency = sc.frequency; end
+                        for is = 1:numel(scenarios)
+                            sc = scenarios{is};
+                            attack_cfg = struct('enabled',true,'type',sc.type,'start_time',sc.start_time);
+                            if isfield(sc,'magnitude'), attack_cfg.magnitude = sc.magnitude; end
+                            if isfield(sc,'slope'), attack_cfg.slope = sc.slope; end
+                            if isfield(sc,'frequency'), attack_cfg.frequency = sc.frequency; end
 
-                    y_2dof_sc = simulate_closedloop_2dof_euler_attacked(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, t, r, attack_cfg);
-                    [attack_flag, ~, detection_time, ~] = direct_baseline_detector(y_2dof_sc, y_2dof_sc, t, struct('baseline_window',5,'window_size',50,'threshold_factor',3,'min_consecutive',3,'startup_suppress',4.8));
-                    C_pid_tuned = C_pid;
-                    [u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler( ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid_tuned, t, r, attack_cfg, attack_flag, detection_time, cfg);
-                    y_res = sanitize_signal(y_res);
-                    dt_sim = t(2)-t(1);
-                    if ~isempty(switch_times)
-                        idx_sw = find(t >= switch_times(1,1), 1, 'first'); if isempty(idx_sw), idx_sw = numel(t); end
-                        u_prev_sw = u_res(max(1, idx_sw-1)); u_post_sw = u_res(min(numel(u_res), idx_sw)); u_jump = u_post_sw - u_prev_sw;
-                    else
-                        u_jump = NaN;
+                            y_2dof_sc = simulate_closedloop_2dof_euler_attacked(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, t, r, attack_cfg);
+                            [attack_flag, ~, detection_time, ~] = direct_baseline_detector(y_2dof_sc, y_2dof_sc, t, struct('baseline_window',5,'window_size',50,'threshold_factor',3,'min_consecutive',3,'startup_suppress',4.8));
+                            C_pid_tuned = C_pid;
+                            [u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler( ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid_tuned, t, r, attack_cfg, attack_flag, detection_time, cfg);
+                            y_res = sanitize_signal(y_res);
+                            dt_sim = t(2)-t(1);
+                            if ~isempty(switch_times)
+                                idx_sw = find(t >= switch_times(1,1), 1, 'first'); if isempty(idx_sw), idx_sw = numel(t); end
+                                u_prev_sw = u_res(max(1, idx_sw-1)); u_post_sw = u_res(min(numel(u_res), idx_sw)); u_jump = u_post_sw - u_prev_sw;
+                            else
+                                u_jump = NaN;
+                            end
+                            if numel(u_res) >= 2, u_peak_rate = max(abs(diff(u_res))) / max(eps, dt_sim); else u_peak_rate = NaN; end
+                            itae_res = safe_itae(y_res, t, 1e6);
+                            if exist('diag','var') && isfield(diag,'u_comp_hist') && ~isempty(diag.u_comp_hist)
+                                u_comp_peak = max(abs(diag.u_comp_hist));
+                            else
+                                u_comp_peak = NaN;
+                            end
+                            row = row + 1;
+                            results(row).scenario = sc.name; results(row).blend_time = cfg.blend_time; results(row).recovery_time = cfg.recovery_time; results(row).bumpless_reg = cfg.bumpless_reg; results(row).isolation_tau = cfg.isolation_tau; results(row).actuator_limits = cfg.actuator_limits; results(row).Q_scale = cfg.Q_scale; results(row).R_scale = cfg.R_scale;
+                            results(row).itae_res = itae_res; results(row).y_res_final = safe_scalar(y_res(end),1e6); results(row).u_jump = u_jump; results(row).u_peak_rate = u_peak_rate; results(row).u_comp_peak = u_comp_peak;
+                        end
                     end
-                    if numel(u_res) >= 2, u_peak_rate = max(abs(diff(u_res))) / max(eps, dt_sim); else u_peak_rate = NaN; end
-                    itae_res = safe_itae(y_res, t, 1e6);
-                    if exist('diag','var') && isfield(diag,'u_comp_hist') && ~isempty(diag.u_comp_hist)
-                        u_comp_peak = max(abs(diag.u_comp_hist));
-                    else
-                        u_comp_peak = NaN;
-                    end
-                    row = row + 1;
-                    results(row).scenario = sc.name; results(row).blend_time = cfg.blend_time; results(row).recovery_time = cfg.recovery_time; results(row).bumpless_reg = cfg.bumpless_reg; results(row).isolation_tau = cfg.isolation_tau; results(row).actuator_limits = cfg.actuator_limits; results(row).Q_scale = cfg.Q_scale; results(row).R_scale = cfg.R_scale;
-                    results(row).itae_res = itae_res; results(row).y_res_final = safe_scalar(y_res(end),1e6); results(row).u_jump = u_jump; results(row).u_peak_rate = u_peak_rate; results(row).u_comp_peak = u_comp_peak;
                 end
             end
         end
