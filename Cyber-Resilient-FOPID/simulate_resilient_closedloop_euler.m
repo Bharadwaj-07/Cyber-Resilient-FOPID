@@ -57,9 +57,14 @@ else
     isolation_tau = max(eps, switcher_cfg.isolation_tau);
 end
 if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'observer_recovery_time')
-    observer_recovery_time = max(1.0, recovery_time);
+    observer_recovery_time = 1.0;
 else
     observer_recovery_time = max(eps, switcher_cfg.observer_recovery_time);
+end
+if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'recovery_time')
+    recovery_time = observer_recovery_time;
+else
+    recovery_time = max(eps, switcher_cfg.recovery_time);
 end
 if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'observer_innovation_limit')
     observer_innovation_limit = 0.05;
@@ -82,6 +87,13 @@ else
     end
 end
 
+% anti-windup gain
+if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'anti_windup_gain')
+    anti_windup_gain = 0.1;
+else
+    anti_windup_gain = max(0, min(1, switcher_cfg.anti_windup_gain));
+end
+
 [Aobs, Bobs, Cobs, Dobs, Lobs, observer_ok] = build_recovery_observer(plant_ss, sensor_ss, switcher_cfg);
 if observer_ok
     zhat = zeros(size(Aobs,1),1);
@@ -91,12 +103,16 @@ end
 attack_est = 0;
 attack_est_hist = zeros(N,1);
 y_hat_hist = zeros(N,1);
+y_corr_hist = zeros(N,1);
 obs_gain_hist = zeros(N,1);
 y_iso_hist = zeros(N,1);
 u_comp_hist = zeros(N,1);
 isolation_conf_hist = zeros(N,1);
 recovery_initialized = false;
 switch_recorded = false;
+in_recovery = false;
+recovery_counter = 0;
+recovery_start_time = NaN;
 
 for k = 1:N
     if k == 1
@@ -124,6 +140,7 @@ for k = 1:N
         innovation = y_meas - y_hat;
         innovation = max(min(innovation, 1e6), -1e6);
         if isfinite(detection_time) && t(k) >= detection_time
+            % Isolation/update attack estimate
             iso_gain = min(1, dt / max(eps, isolation_tau));
             attack_est = (1 - iso_gain) * attack_est + iso_gain * innovation;
             max_attack_est = max(abs(y_hat) * 2, 10 * observer_innovation_limit);
@@ -133,10 +150,73 @@ for k = 1:N
             attack_est = max(min(attack_est, max_attack_est), -max_attack_est);
             y_iso = y_hat;
             isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
-            y_ctrl = y_hat;
-            obs_gain = observer_min_gain;
-            mode = 3;
+
+            % Recovery detection: if isolation confidence drops below threshold for
+            % sustained period, consider recovery.
+            rec_thresh = 0.15;
+            if isolation_conf < rec_thresh
+                recovery_counter = recovery_counter + dt;
+            else
+                recovery_counter = 0;
+            end
+            if ~in_recovery && recovery_counter >= recovery_time
+                in_recovery = true;
+                recovery_start_time = t(k);
+            end
+
+            % Blending during early detection window or during recovery blending
+            if in_recovery
+                % Blend from y_hat back to y_meas over blend_time
+                if ~isnan(recovery_start_time) && blend_time > 0
+                    tau = t(k) - recovery_start_time;
+                    blend_alpha = max(0, 1 - tau / blend_time); % 1 -> y_hat, 0-> y_corr
+                    % subtract estimated attack from measurement to form corrected measurement
+                    if isfield(switcher_cfg,'use_attack_subtraction') && ~switcher_cfg.use_attack_subtraction
+                        y_corr = y_meas;
+                    else
+                        y_corr = y_meas - attack_est;
+                    end
+                    y_ctrl = blend_alpha * y_hat + (1 - blend_alpha) * y_corr;
+                    y_corr_hist(k) = y_corr;
+                    if tau >= blend_time
+                        % finish recovery
+                        in_recovery = false;
+                        recovery_counter = 0;
+                        attack_est = 0;
+                        isolation_conf = 0;
+                        obs_gain = 1;
+                        % soft-reset controller integrators to avoid large u jumps
+                        if ~isempty(xr), xr = 0.5 * xr; end
+                        if ~isempty(xy), xy = 0.5 * xy; end
+                        mode = 1;
+                    else
+                        mode = 3;
+                    end
+                else
+                    % immediate switch back if no blend configured
+                    in_recovery = false;
+                    recovery_counter = 0;
+                    attack_est = 0;
+                    isolation_conf = 0;
+                    obs_gain = 1;
+                    if isfield(switcher_cfg,'use_attack_subtraction') && ~switcher_cfg.use_attack_subtraction
+                        y_corr = y_meas;
+                    else
+                        y_corr = y_meas - attack_est;
+                    end
+                    y_ctrl = y_corr;
+                    y_corr_hist(k) = y_corr;
+                    mode = 1;
+                end
+            else
+                % Normal isolation mode: use observer output for control
+                % use observer output; also allow attack subtraction option
+                y_ctrl = y_hat;
+                obs_gain = observer_min_gain;
+                mode = 3;
+            end
         else
+            % before detection: normal operation
             attack_est = 0;
             y_iso = y_meas;
             y_ctrl = y_meas;
@@ -144,8 +224,14 @@ for k = 1:N
             obs_gain = 1;
             mode = 1;
         end
-        innovation_gain = min(1, observer_innovation_limit / max(observer_innovation_limit, abs(innovation)));
-        obs_gain = max(observer_min_gain, obs_gain * innovation_gain);
+        % Observer gain schedule: allow toggling between conservative and aggressive
+        if isfield(switcher_cfg,'use_aggressive_obs_gain') && switcher_cfg.use_aggressive_obs_gain
+            innovation_frac = abs(innovation) / (observer_innovation_limit + abs(innovation));
+            obs_gain = observer_min_gain + (1 - observer_min_gain) * innovation_frac;
+        else
+            innovation_gain = min(1, observer_innovation_limit / max(observer_innovation_limit, abs(innovation)));
+            obs_gain = max(observer_min_gain, obs_gain * innovation_gain);
+        end
         zhat = zhat + (Aobs * zhat + Bobs * u_prev + obs_gain * (Lobs * innovation)) * dt;
         attack_est_hist(k) = attack_est;
         y_hat_hist(k) = y_hat;
@@ -185,6 +271,18 @@ for k = 1:N
 
     uk = min(max(uk_unclamped, umin), umax);
 
+    % Anti-windup: if saturated, gently nudge controller states
+    sat_err = uk - uk_unclamped;
+    if abs(sat_err) > 0 && anti_windup_gain > 0
+        if ~isempty(xr)
+            xr = xr + anti_windup_gain * sat_err * dt * ones(size(xr));
+        end
+        if ~isempty(xy)
+            xy = xy + anti_windup_gain * sat_err * dt * ones(size(xy));
+        end
+        u_comp_hist(k) = sat_err;
+    end
+
     if ~isempty(Ar)
         xr = xr + (Ar * xr + Br * r(k)) * dt;
     end
@@ -204,6 +302,7 @@ end
 diag = struct();
 diag.attack_est_hist = attack_est_hist;
 diag.y_hat_hist = y_hat_hist;
+diag.y_corr_hist = y_corr_hist;
 diag.obs_gain_hist = obs_gain_hist;
 diag.y_iso_hist = y_iso_hist;
 diag.u_comp_hist = u_comp_hist;
@@ -248,8 +347,6 @@ catch
     ok = false;
     Aobs = []; Bobs = []; Cobs = []; Dobs = []; Lobs = [];
 end
-end
-
 function y_attack = apply_attack_scalar(y, t, attack_cfg)
 y_attack = y;
 if nargin < 3 || isempty(attack_cfg) || ~isfield(attack_cfg, 'enabled') || ~attack_cfg.enabled
