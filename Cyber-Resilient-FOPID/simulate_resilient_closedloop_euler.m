@@ -248,7 +248,14 @@ for k = 1:N
             y_ctrl = y_meas;
             mode = 1;
         else
-            y_ctrl = y_hat;
+            % Observer unavailable: fall back to using measured (or corrected) value
+            % to avoid referencing undefined y_hat. This keeps the resilient
+            % pipeline operational even without an observer.
+            if isfield(switcher_cfg,'use_attack_subtraction') && switcher_cfg.use_attack_subtraction
+                y_ctrl = y_meas - attack_est;
+            else
+                y_ctrl = y_meas;
+            end
             mode = 3;
         end
         y_iso = y_ctrl;

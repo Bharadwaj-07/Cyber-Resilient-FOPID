@@ -133,6 +133,21 @@ end
 % Phase 5: full comparison and resilient validation (Phase 4 is exercised here)
 try
     if exist('phase5_full_comparison.m','file')
+        % Run quick 2-DoF/resilient diagnostic before Phase5
+        if exist('phase5_check_2dof.m','file')
+            try
+                fprintf('Running phase5_check_2dof diagnostic...
+'); fprintf(runfid,'Running phase5_check_2dof diagnostic...\n');
+                phase5_check_2dof();
+                fprintf(runfid,'phase5_check_2dof completed\n');
+                run_summary(end+1,:) = {'phase5_check_2dof','phase5_check_2dof','ok'};
+            catch MEchk
+                fprintf(runfid,'phase5_check_2dof failed: %s\n', MEchk.message);
+                run_summary(end+1,:) = {'phase5_check_2dof','phase5_check_2dof','failed'};
+            end
+        else
+            fprintf(runfid,'phase5_check_2dof not found - skipping 2DoF diagnostic\n');
+        end
         % Optional: run grid-search for recovery parameters first if available
         if exist('phase5_grid_search_recovery.m','file')
             try
