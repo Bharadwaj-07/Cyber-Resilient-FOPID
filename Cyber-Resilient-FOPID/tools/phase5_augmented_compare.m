@@ -65,10 +65,8 @@ for is = 1:numel(scenarios)
     [y_2dof,~] = simulate_closedloop_2dof_euler_attacked(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, t, r, attack_cfg);
     y_2dof = sanitize_signal(y_2dof); itae_2dof = safe_itae(y_2dof,t,1e6);
 
-    % Augmented 2DoF: use the same 2DoF structure with a stronger recovery profile.
-    cfg_2d = struct('blend_time',0.25,'isolation_tau',0.15,'observer_recovery_time',0.6, ...
-        'recovery_time',0.6,'actuator_limits',[-5 5],'use_attack_subtraction',true, ...
-        'use_aggressive_obs_gain',true,'observer_min_gain',0.05);
+    % Augmented 2DoF: keep the same recovery profile as the PID and 1DoF branches.
+    cfg_2d = struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]);
     [u_res_2d,~,switch_times_2d,y_res_2d,diag_2d] = simulate_resilient_closedloop_euler(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, 1, 5, cfg_2d);
     y_res_2d = sanitize_signal(y_res_2d); itae_res_2d = safe_itae(y_res_2d,t,1e6);
 
