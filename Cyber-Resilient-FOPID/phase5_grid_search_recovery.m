@@ -58,11 +58,40 @@ for ib = 1:numel(blend_list)
                             [u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler( ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid_tuned, t, r, attack_cfg, attack_flag, detection_time, cfg);
                             y_res = sanitize_signal(y_res);
                             dt_sim = t(2)-t(1);
+                            % Compute u_jump robustly. Prefer explicit switch_times,
+                            % fall back to detection_time index or diag.u_comp_hist.
+                            u_jump = NaN;
                             if ~isempty(switch_times)
                                 idx_sw = find(t >= switch_times(1,1), 1, 'first'); if isempty(idx_sw), idx_sw = numel(t); end
                                 u_prev_sw = u_res(max(1, idx_sw-1)); u_post_sw = u_res(min(numel(u_res), idx_sw)); u_jump = u_post_sw - u_prev_sw;
                             else
-                                u_jump = NaN;
+                                % Try using detection_time (from detector) if available
+                                if exist('detection_time','var') && ~isempty(detection_time) && isfinite(detection_time)
+                                    idx_det = find(t >= detection_time, 1, 'first');
+                                    if ~isempty(idx_det)
+                                        u_prev_sw = u_res(max(1, idx_det-1)); u_post_sw = u_res(min(numel(u_res), idx_det)); u_jump = u_post_sw - u_prev_sw;
+                                    end
+                                end
+                                % If still NaN, try diag.u_comp_hist (controller compensation history)
+                                if (~isfinite(u_jump) || isnan(u_jump)) && exist('diag','var') && isfield(diag,'u_comp_hist') && ~isempty(diag.u_comp_hist)
+                                    uch = diag.u_comp_hist(:);
+                                    if numel(uch) == numel(t)
+                                        du = diff(uch);
+                                        if ~isempty(du)
+                                            [~, imax] = max(abs(du));
+                                            u_jump = du(imax);
+                                        else
+                                            u_jump = uch(end) - uch(1);
+                                        end
+                                    else
+                                        % fallback to overall change
+                                        u_jump = uch(end) - uch(1);
+                                    end
+                                end
+                                % ensure numeric
+                                if isempty(u_jump) || (~isnumeric(u_jump))
+                                    u_jump = NaN;
+                                end
                             end
                             if numel(u_res) >= 2, u_peak_rate = max(abs(diff(u_res))) / max(eps, dt_sim); else u_peak_rate = NaN; end
                             itae_res = safe_itae(y_res, t, 1e6);
