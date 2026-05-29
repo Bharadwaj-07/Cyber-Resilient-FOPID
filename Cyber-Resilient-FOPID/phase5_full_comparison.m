@@ -249,19 +249,22 @@ for i = 1:length(scenarios)
     residual_peak_to_sigma = residual_abs_max / residual_baseline_sigma;
     threshold = detector_cfg.threshold_factor * residual_baseline_sigma;
 
-    % Resilient run: full closed-loop simulation switching from 2DoF to PID
-    % at the detector-reported time.
-    switcher_cfg.detector_attack_flag = attack_flag;
-    switcher_cfg.detector_attack_time = detection_time;
-    % Re-tune fallback PID for this scenario to improve resilient response
-    try
-        C_pid_tuned = tune_pid_for_attack(ss(G_fwd), ss(G_sen), t, r, attack_cfg, C_pid);
-    catch
-        C_pid_tuned = C_pid;
-    end
+    % Resilient run: keep the 2DoF structure active but use a slightly more
+    % aggressive correction profile for the augmented 2DoF branch. This is
+    % tuned to reduce the small ITAE gap versus the augmented 1DoF case.
+    switcher_cfg_2dof = switcher_cfg;
+    switcher_cfg_2dof.detector_attack_flag = attack_flag;
+    switcher_cfg_2dof.detector_attack_time = detection_time;
+    switcher_cfg_2dof.blend_time = 0.25;
+    switcher_cfg_2dof.recovery_time = 0.6;
+    switcher_cfg_2dof.observer_recovery_time = 0.6;
+    switcher_cfg_2dof.isolation_tau = 0.15;
+    switcher_cfg_2dof.use_attack_subtraction = true;
+    switcher_cfg_2dof.use_aggressive_obs_gain = true;
+    switcher_cfg_2dof.observer_min_gain = 0.05;
     try
         [u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler( ...
-            ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid_tuned, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg);
+            ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg_2dof);
         fprintf(lf, 'Resilient sim: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
     catch ME
         fprintf(lf, 'Resilient sim ERROR: %s\n', ME.message);
