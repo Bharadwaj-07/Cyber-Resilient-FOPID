@@ -1,0 +1,11 @@
+variant,attack_case,itae,u_jump,u_peak_rate,attack_detected,detection_time
+baseline,continuous_bias,299.126885848066,NaN,4312.44940121907,0,NaN
+baseline,gapped_bias,27.5223432012553,NaN,4312.44940416765,0,NaN
+A_attack_subtraction,continuous_bias,299.126885848066,NaN,4312.44940121907,0,NaN
+A_attack_subtraction,gapped_bias,27.5223432012553,NaN,4312.44940416765,0,NaN
+B_anti_windup,continuous_bias,299.126885848066,NaN,4312.44940121907,0,NaN
+B_anti_windup,gapped_bias,27.5223432012551,NaN,4312.44940416766,0,NaN
+C_aggr_obs_gain,continuous_bias,299.126885848066,NaN,4312.44940121907,0,NaN
+C_aggr_obs_gain,gapped_bias,27.5223432012553,NaN,4312.44940416765,0,NaN
+ALL,continuous_bias,299.126885848066,NaN,4312.44940121907,0,NaN
+ALL,gapped_bias,27.5223432012551,NaN,4312.44940416766,0,NaN
