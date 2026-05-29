@@ -4,6 +4,5 @@ phase2,avr_closedloop_2dof,skipped
 phase3_tune,avr_phase3_tune,ok
 phase3_quick_test,phase3_quick_test,ok
 phase3_full_run,phase3_full_run,ok
-phase5_grid_search_recovery,phase5_grid_search_recovery,ok
-phase5_apply_best_from_grid,phase5_apply_best_from_grid,failed
+phase5_grid_search_recovery,phase5_grid_search_recovery,failed
 phase5_full_comparison,phase5_full_comparison,ok
