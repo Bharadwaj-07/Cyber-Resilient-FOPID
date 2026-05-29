@@ -44,17 +44,18 @@ for is = 1:numel(scenarios)
     y_pid = simulate_closedloop_pid_euler_attacked(ss(G_fwd), ss(G_sen), C_pid, t, r, attack_cfg);
     y_pid = sanitize_signal(y_pid); itae_pid = safe_itae(y_pid,t,1e6);
 
-    % Augmented PID (apply resilient wrapper): use C_r = 0, C_y = C_pid
-    C_r_zero = tf(0);
-    [u_res_pid,~,switch_times_pid,y_res_pid,diag_pid] = simulate_resilient_closedloop_euler(ss(G_fwd), ss(G_sen), C_r_zero, C_pid, C_pid, t, r, attack_cfg, 1, 5, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
+    % Augmented PID: use the same controller in both reference and feedback
+    % paths so the resilient wrapper preserves the nominal PID behavior.
+    [u_res_pid,~,switch_times_pid,y_res_pid,diag_pid] = simulate_resilient_closedloop_euler(ss(G_fwd), ss(G_sen), C_pid, C_pid, C_pid, t, r, attack_cfg, 1, 5, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
     y_res_pid = sanitize_signal(y_res_pid); itae_res_pid = safe_itae(y_res_pid,t,1e6);
 
     % Baseline 1DoF (feedback-only)
     y_1dof = simulate_closedloop_pid_euler_attacked(ss(G_fwd), ss(G_sen), C_1dof, t, r, attack_cfg);
     y_1dof = sanitize_signal(y_1dof); itae_1dof = safe_itae(y_1dof,t,1e6);
 
-    % Augmented 1DoF
-    [u_res_1d,~,switch_times_1d,y_res_1d,diag_1d] = simulate_resilient_closedloop_euler(ss(G_fwd), ss(G_sen), C_r_zero, C_1dof, C_1dof, t, r, attack_cfg, 1, 5, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
+    % Augmented 1DoF: duplicate the controller into both 2DoF paths so the
+    % resilient pipeline sees the same closed-loop shape as the baseline.
+    [u_res_1d,~,switch_times_1d,y_res_1d,diag_1d] = simulate_resilient_closedloop_euler(ss(G_fwd), ss(G_sen), C_1dof, C_1dof, C_1dof, t, r, attack_cfg, 1, 5, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
     y_res_1d = sanitize_signal(y_res_1d); itae_res_1d = safe_itae(y_res_1d,t,1e6);
 
     % Baseline 2DoF
