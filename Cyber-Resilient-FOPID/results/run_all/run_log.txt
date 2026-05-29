@@ -1,4 +1,4 @@
-Run all phases log - 29-May-2026 06:37:49
+Run all phases log - 29-May-2026 06:53:25
 Running avr_validate_plant...
 avr_validate_plant completed
 Phase2 artifacts found (/MATLAB Drive/Project/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase2_results/mat/avr_phase2.mat) — skipping avr_closedloop_2dof (PSO).
@@ -7,12 +7,12 @@ avr_compare_controllers completed
 Running avr_phase3_tune...
 avr_phase3_tune completed
 Running phase3_quick_test...
-Phase3 quick run log - 29-May-2026 06:38:22
+Phase3 quick run log - 29-May-2026 06:53:42
 Detector: flag=1, confidence=0.5, detection_time=5.07
-Saved results MAT to /MATLAB Drive/Project/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/mat/results_phase3_quick_20260529_063822.mat
+Saved results MAT to /MATLAB Drive/Project/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/mat/results_phase3_quick_20260529_065342.mat
 phase3_quick_test completed
 Running phase3_full_run...
-Phase3 full run log — 29-May-2026 06:39:00
+Phase3 full run log — 29-May-2026 06:53:47
 
 Loading parameters...
 Loading phase2 controllers...
@@ -33,7 +33,7 @@ Scenario 4: detected=1, detection_time=10.007, delay=0.007, residual_rms=0.1643,
 --- Running scenario 5 (bias) ---
 Scenario 5: detected=1, detection_time=12.007, delay=0.007, residual_rms=0.2163, residual_peak=0.3000
 
-Saved results to /MATLAB Drive/Project/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/mat/phase3_data_20260529_063900.mat and /MATLAB Drive/Project/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/csv/phase3_summary_20260529_063900.csv
+Saved results to /MATLAB Drive/Project/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/mat/phase3_data_20260529_065347.mat and /MATLAB Drive/Project/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase3_results/csv/phase3_summary_20260529_065347.csv
 phase3_full_run completed
 phase3_full_run completed
 Running phase5_grid_search_recovery...
@@ -45,7 +45,7 @@ phase5_evaluate_top3_from_grid completed
 Running phase5_assess_gap_attacks...
 phase5_assess_gap_attacks completed
 Running phase5_full_comparison...
-Phase5 run log - 29-May-2026 06:42:28
+Phase5 run log - 29-May-2026 06:57:10
 Loaded locked Phase5 config from /MATLAB Drive/Project/Cyber-Resilient-FOPID/Cyber-Resilient-FOPID/phase5_results/phase5_locked.mat
 Detector: flag=1, confidence=0.129996, detection_time=5.002, delay=0.002
 Resilient sim: transitions=1, final_mode=3
