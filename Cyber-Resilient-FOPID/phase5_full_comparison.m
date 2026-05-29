@@ -1047,6 +1047,7 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
     u_comp_hist = zeros(N,1);
     isolation_conf_hist = zeros(N,1);
     switch_recorded = false;
+    recovery_initialized = false;
 
     for k = 1:N
         if k == 1
@@ -1085,7 +1086,7 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
                 attack_est = (1 - iso_gain) * attack_est + iso_gain * innovation;
                 y_iso = y_meas - attack_est;
                 isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
-                y_ctrl = (1 - isolation_conf) * y_meas + isolation_conf * y_iso;
+                y_ctrl = y_iso;
                 obs_gain = max(observer_min_gain, 1 - max(0, t(k) - detection_time) / observer_recovery_time);
             else
                 % Before detection, stay measurement-driven so the observer
@@ -1153,23 +1154,20 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
         ur = Crm * xr + Dr * r(k);
         uy = Cym * xy + Dy * y_ctrl;
         epid = r(k) - y_ctrl;
+
+        if mode == 3 && ~recovery_initialized
+            xpid = align_controller_state(Cpid_ss, epid, u_prev, xpid, switcher_cfg.bumpless_reg);
+            recovery_initialized = true;
+        end
         pid_out = Cpm * xpid + Dp * epid;
 
-        % Nominal control uses the isolated measurement. Recovery is driven by
-        % the attack-isolation estimate rather than a control-side correction.
+        % Control law: keep the nominal 2DoF loop before detection, then
+        % hand off to the isolated PID recovery loop after detection.
         uk_nominal = ur - uy;
-        if observer_ok
-            if isfinite(detection_time) && t(k) >= detection_time
-                uk_unclamped = uk_nominal;
-            else
-                uk_unclamped = uk_nominal;
-            end
+        if mode == 3
+            uk_unclamped = pid_out;
         else
-            if isfinite(detection_time) && t(k) >= detection_time
-                uk_unclamped = pid_out;
-            else
-                uk_unclamped = uk_nominal;
-            end
+            uk_unclamped = uk_nominal;
         end
 
         % apply actuator limits and anti-windup: if clamped, skip PID integrator update
