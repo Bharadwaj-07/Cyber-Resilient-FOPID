@@ -118,7 +118,7 @@ for is = 1:numel(scenarios)
 
     nexttile;
     plot(t, abs(r - y_2dof), 'b--', 'LineWidth', 1.0); hold on;
-    plot(t, abs(r - y_res_2dof), 'r-', 'LineWidth', 1.0);
+    plot(t, abs(r - y_res_2d), 'r-', 'LineWidth', 1.0);
     grid on; title('2DoF tracking error'); xlabel('Time (s)'); ylabel('|e|');
     legend('baseline 2DoF','augmented 2DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
