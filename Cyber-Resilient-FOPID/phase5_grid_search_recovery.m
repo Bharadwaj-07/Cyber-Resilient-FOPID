@@ -29,18 +29,18 @@ scenarios{end+1} = struct('name','bias_large','type','bias','magnitude',0.5,'sta
 scenarios{end+1} = struct('name','ramp','type','ramp','slope',0.05,'start_time',5);
 scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency',1,'start_time',5);
 
-% Grid: focus on attack isolation speed and compensator aggressiveness.
+% Grid: focus on observer-fed blending speed and isolation aggressiveness.
+blend_list = [0.2, 0.5, 1.0];
+recovery_list = [0.5, 1.0, 2.0];
 isolation_list = [0.1, 0.25, 0.5];
-comp_gain_list = [0.4, 0.8, 1.2];
-comp_tau_list = [0.5, 1.0, 2.0];
 act_limits = {[-2 2], [-5 5]};
 
 results = []; row = 0;
-for ii = 1:numel(isolation_list)
-    for ic = 1:numel(comp_gain_list)
-        for it = 1:numel(comp_tau_list)
+for ib = 1:numel(blend_list)
+    for ir = 1:numel(recovery_list)
+        for ii = 1:numel(isolation_list)
             for ia = 1:numel(act_limits)
-                cfg = struct('blend_time',1.0,'recovery_time',1.0,'bumpless_reg',1e-3,'isolation_tau',isolation_list(ii),'compensator_gain',comp_gain_list(ic),'compensator_tau',comp_tau_list(it),'compensator_limit',max(abs(act_limits{ia})),'actuator_limits',act_limits{ia});
+                cfg = struct('blend_time',blend_list(ib),'recovery_time',recovery_list(ir),'bumpless_reg',1e-3,'isolation_tau',isolation_list(ii),'observer_recovery_time',recovery_list(ir),'observer_innovation_limit',0.05,'observer_min_gain',0.02,'actuator_limits',act_limits{ia});
                 for is = 1:numel(scenarios)
                     sc = scenarios{is};
                     attack_cfg = struct('enabled',true,'type',sc.type,'start_time',sc.start_time);
@@ -68,7 +68,7 @@ for ii = 1:numel(isolation_list)
                         u_comp_peak = NaN;
                     end
                     row = row + 1;
-                    results(row).scenario = sc.name; results(row).isolation_tau = cfg.isolation_tau; results(row).compensator_gain = cfg.compensator_gain; results(row).compensator_tau = cfg.compensator_tau; results(row).actuator_limits = cfg.actuator_limits;
+                    results(row).scenario = sc.name; results(row).blend_time = cfg.blend_time; results(row).recovery_time = cfg.recovery_time; results(row).bumpless_reg = cfg.bumpless_reg; results(row).isolation_tau = cfg.isolation_tau; results(row).actuator_limits = cfg.actuator_limits;
                     results(row).itae_res = itae_res; results(row).y_res_final = safe_scalar(y_res(end),1e6); results(row).u_jump = u_jump; results(row).u_peak_rate = u_peak_rate; results(row).u_comp_peak = u_comp_peak;
                 end
             end

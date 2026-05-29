@@ -920,7 +920,7 @@ function ss_sys = safe_controller_ss(C, plant_ss)
     end
 end
 
-function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_r, C_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg)
+function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloop_euler_local(plant_ss, sensor_ss, C_r, C_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg)
     % Self-consistent resilient closed-loop simulation.
     % Mode 1: 2DoF control u = C_r*r - C_y*y_meas
     % Mode 2: PID control on attacked measurement error
@@ -1030,8 +1030,9 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
     end
 
     % Attack-aware observer used to reconstruct a clean feedback signal from
-    % the plant and sensor models. The recovery path explicitly isolates the
-    % attack, then injects a dedicated compensator on top of the cleaned loop.
+    % the plant and sensor models. Recovery now keeps the nominal 2DoF loop
+    % and feeds it the observer estimate after detection instead of swapping
+    % to a separate PID recovery path.
     [Aobs, Bobs, Cobs, Dobs, Lobs, observer_ok] = build_recovery_observer(plant_ss, sensor_ss);
     if observer_ok
         zhat = zeros(size(Aobs,1),1);
@@ -1079,14 +1080,20 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
             innovation = y_meas - y_hat;
             innovation = max(min(innovation, 1e6), -1e6);
             if isfinite(detection_time) && t(k) >= detection_time
-                % After detection, isolate the attack with a low-pass estimate
-                % of the innovation and use that isolated signal to steer a
-                % dedicated compensator.
+                % After detection, keep the nominal 2DoF controller and feed
+                % it the observer reconstruction directly. This follows the
+                % attack-reconstruction literature more closely than trying to
+                % switch into a separate recovery controller.
                 iso_gain = min(1, dt / max(eps, isolation_tau));
                 attack_est = (1 - iso_gain) * attack_est + iso_gain * innovation;
-                y_iso = y_meas - attack_est;
+                max_attack_est = max(abs(y_hat) * 2, 10 * observer_innovation_limit);
+                if ~isfinite(max_attack_est) || max_attack_est <= 0
+                    max_attack_est = 1.0;
+                end
+                attack_est = max(min(attack_est, max_attack_est), -max_attack_est);
+                y_iso = y_hat;
                 isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
-                y_ctrl = y_iso;
+                y_ctrl = y_hat;
                 obs_gain = max(observer_min_gain, 1 - max(0, t(k) - detection_time) / observer_recovery_time);
             else
                 % Before detection, stay measurement-driven so the observer
@@ -1149,26 +1156,13 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
         end
         mode_history(k) = mode;
 
-        % Always update both controller internal states so outputs are ready
-        % for recovery and to avoid state freezes when inactive.
+        % Keep the nominal 2DoF controller active; recovery only changes the
+        % feedback signal fed into it.
         ur = Crm * xr + Dr * r(k);
         uy = Cym * xy + Dy * y_ctrl;
         epid = r(k) - y_ctrl;
 
-        if mode == 3 && ~recovery_initialized
-            xpid = align_controller_state(Cpid_ss, epid, u_prev, xpid, switcher_cfg.bumpless_reg);
-            recovery_initialized = true;
-        end
-        pid_out = Cpm * xpid + Dp * epid;
-
-        % Control law: keep the nominal 2DoF loop before detection, then
-        % hand off to the isolated PID recovery loop after detection.
-        uk_nominal = ur - uy;
-        if mode == 3
-            uk_unclamped = pid_out;
-        else
-            uk_unclamped = uk_nominal;
-        end
+        uk_unclamped = ur - uy;
 
         % apply actuator limits and anti-windup: if clamped, skip PID integrator update
         uk = min(max(uk_unclamped, umin), umax);
@@ -1215,87 +1209,6 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
         diag.y_iso_hist = [];
         diag.u_comp_hist = [];
         diag.isolation_conf_hist = [];
-    end
-end
-
-function x = align_controller_state(ctrl_ss, input_value, desired_output, fallback_state, reg)
-    % Align controller state so ctrl_ss produces desired_output for the current input.
-    % Uses a regularized least-squares solve when the direct mapping is not invertible.
-    x = fallback_state;
-    try
-        Cc = ctrl_ss.C;
-        Dc = ctrl_ss.D;
-        if isempty(Cc)
-            return;
-        end
-        target = desired_output - Dc * input_value;
-        if isempty(ctrl_ss.A)
-            x = zeros(size(fallback_state));
-            return;
-        end
-        % Use provided regularization if given, otherwise fall back to small default.
-        if nargin < 5 || isempty(reg)
-            reg = 1e-6;
-        end
-        if size(Cc,1) == 1
-            denom = Cc * Cc.' + reg;
-            x = (Cc.' / denom) * target;
-        else
-            Regl = reg * eye(size(Cc,2));
-            x = (Cc.' * Cc + Regl) \ (Cc.' * target);
-        end
-        if any(~isfinite(x))
-            x = fallback_state;
-        end
-    catch
-        x = fallback_state;
-    end
-end
-
-function [Aobs, Bobs, Cobs, Dobs, Lobs, ok] = build_recovery_observer(plant_ss, sensor_ss)
-    % Build a full-order observer for the plant + sensor cascade so the
-    % controller can recover from a corrupted measurement by tracking the
-    % uncorrupted model output.
-    ok = false;
-    Aobs = []; Bobs = []; Cobs = []; Dobs = []; Lobs = [];
-    try
-        plant_ss = ss(plant_ss);
-        sensor_ss = ss(sensor_ss);
-
-        A = plant_ss.A; B = plant_ss.B; C = plant_ss.C; D = plant_ss.D;
-        As = sensor_ss.A; Bs = sensor_ss.B; Cs = sensor_ss.C; Ds = sensor_ss.D;
-
-        nplant = size(A,1);
-        nsensor = size(As,1);
-        Aobs = [A, zeros(nplant, nsensor); Bs * C, As];
-        Bobs = [B; Bs * D];
-        Cobs = [Ds * C, Cs];
-        Dobs = Ds * D;
-
-        nobs = size(Aobs,1);
-        if nobs == 0
-            return;
-        end
-
-        % Place observer poles faster than the plant dynamics but keep them
-        % real and well separated so the estimator converges quickly.
-        pole_base = max(4, 2 * nobs);
-        desired_poles = -pole_base - (0:nobs-1);
-        try
-            Lobs = place(Aobs', Cobs', desired_poles)';
-        catch
-            % fallback: try a slightly slower set of poles if the first set is
-            % numerically awkward for the available observability structure.
-            desired_poles = -max(2, nobs) - (0:nobs-1);
-            Lobs = place(Aobs', Cobs', desired_poles)';
-        end
-        if any(~isfinite(Lobs(:)))
-            return;
-        end
-        ok = true;
-    catch
-        ok = false;
-        Aobs = []; Bobs = []; Cobs = []; Dobs = []; Lobs = [];
     end
 end
 

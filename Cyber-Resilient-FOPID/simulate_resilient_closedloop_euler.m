@@ -10,22 +10,18 @@ As = sensor_ss.A; Bs = sensor_ss.B; Cs = sensor_ss.C; Ds = sensor_ss.D;
 
 Cr_ss = safe_controller_ss(C_r, plant_ss);
 Cy_ss = safe_controller_ss(C_y, plant_ss);
-Cpid_ss = safe_controller_ss(C_pid, plant_ss);
 Ar = Cr_ss.A; Br = Cr_ss.B; Crm = Cr_ss.C; Dr = Cr_ss.D;
 Ay = Cy_ss.A; By = Cy_ss.B; Cym = Cy_ss.C; Dy = Cy_ss.D;
-Ap = Cpid_ss.A; Bp = Cpid_ss.B; Cpm = Cpid_ss.C; Dp = Cpid_ss.D;
 
 nx_p = size(A,1);
 nx_s = size(As,1);
 nx_r = size(Ar,1);
 nx_y = size(Ay,1);
-nx_pidx = size(Ap,1);
 
 xp = zeros(nx_p,1);
 xs = zeros(nx_s,1);
 xr = zeros(nx_r,1);
 xy = zeros(nx_y,1);
-xpid = zeros(nx_pidx,1);
 
 N = length(t);
 y = zeros(N,1);
@@ -55,13 +51,8 @@ if isfinite(detection_time)
 else
     blend_end_time = NaN; blend_end_index = N + 1;
 end
-if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'recovery_time')
-    recovery_time = 1.0;
-else
-    recovery_time = switcher_cfg.recovery_time;
-end
 if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'isolation_tau')
-    isolation_tau = max(0.25, 0.5 * recovery_time);
+    isolation_tau = 0.25;
 else
     isolation_tau = max(eps, switcher_cfg.isolation_tau);
 end
@@ -79,11 +70,6 @@ if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cf
     observer_min_gain = 0.02;
 else
     observer_min_gain = min(max(switcher_cfg.observer_min_gain, 0), 1);
-end
-if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'anti_windup_gain')
-    anti_windup_gain = 10.0;
-else
-    anti_windup_gain = max(0, switcher_cfg.anti_windup_gain);
 end
 if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'actuator_limits')
     umax = 10; umin = -10;
@@ -140,25 +126,15 @@ for k = 1:N
         if isfinite(detection_time) && t(k) >= detection_time
             iso_gain = min(1, dt / max(eps, isolation_tau));
             attack_est = (1 - iso_gain) * attack_est + iso_gain * innovation;
-                % Clamp attack estimate to avoid large subtraction causing
-                % implausible cleaned measurements and actuator saturation.
-                max_attack_est = max(abs(y_hat)*2, 10 * observer_innovation_limit);
-                if ~isfinite(max_attack_est) || max_attack_est <= 0
-                    max_attack_est = 1.0;
-                end
-                attack_est = max(min(attack_est, max_attack_est), -max_attack_est);
-                y_iso = y_meas - attack_est;
-                % Safety fallback: if isolated measurement is unreasonable,
-                % trust the observer output instead of the aggressive isolation.
-                if ~isfinite(y_iso) || abs(y_iso) > 1e3
-                    y_iso = y_hat;
-                end
+            max_attack_est = max(abs(y_hat) * 2, 10 * observer_innovation_limit);
+            if ~isfinite(max_attack_est) || max_attack_est <= 0
+                max_attack_est = 1.0;
+            end
+            attack_est = max(min(attack_est, max_attack_est), -max_attack_est);
+            y_iso = y_hat;
             isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
-                % Blend isolated measurement and observer estimate according
-                % to isolation confidence to avoid trusting an implausible
-                % isolated value outright.
-                y_ctrl = isolation_conf * y_iso + (1 - isolation_conf) * y_hat;
-            obs_gain = max(observer_min_gain, 1 - max(0, t(k) - detection_time) / observer_recovery_time);
+            y_ctrl = y_hat;
+            obs_gain = observer_min_gain;
             mode = 3;
         else
             attack_est = 0;
@@ -177,9 +153,6 @@ for k = 1:N
         y_iso_hist(k) = y_iso;
         isolation_conf_hist(k) = isolation_conf;
         u_comp_hist(k) = 0;
-        if mode == 3 && ~recovery_initialized
-            recovery_initialized = true;
-        end
         if ~switch_recorded && isfinite(detection_time) && t(k) >= detection_time
             switch_times = [t(k), 1, 3];
             switch_recorded = true;
@@ -188,13 +161,8 @@ for k = 1:N
         if k < switch_index || ~isfinite(detection_time)
             y_ctrl = y_meas;
             mode = 1;
-        elseif t(k) <= detection_time + recovery_time
-            beta = (t(k) - detection_time) / max(eps, recovery_time);
-            beta = min(max(beta, 0), 1);
-            y_ctrl = (1 - beta) * y_meas + beta * yk;
-            mode = 3;
         else
-            y_ctrl = yk;
+            y_ctrl = y_hat;
             mode = 3;
         end
         y_iso = y_ctrl;
@@ -213,28 +181,7 @@ for k = 1:N
 
     ur = Crm * xr + Dr * r(k);
     uy = Cym * xy + Dy * y_ctrl;
-    epid = r(k) - y_ctrl;
-
-    if mode == 3 && ~recovery_initialized
-        xpid = align_controller_state(Cpid_ss, epid, u_prev, xpid, get_bumpless_reg(switcher_cfg));
-        recovery_initialized = true;
-    end
-
-    pid_out = Cpm * xpid + Dp * epid;
-
-    if mode == 3
-        % Smoothly blend into recovery controller over blend_time to avoid
-        % abrupt control actions that can drive the plant into saturation.
-        if isfinite(detection_time) && t(k) >= detection_time && isfinite(blend_end_time) && t(k) <= blend_end_time && blend_time > 0
-            beta = (t(k) - detection_time) / max(eps, blend_time);
-            beta = min(max(beta, 0), 1);
-            uk_unclamped = beta * pid_out + (1 - beta) * (ur - uy);
-        else
-            uk_unclamped = pid_out;
-        end
-    else
-        uk_unclamped = ur - uy;
-    end
+    uk_unclamped = ur - uy;
 
     uk = min(max(uk_unclamped, umin), umax);
 
@@ -243,15 +190,6 @@ for k = 1:N
     end
     if ~isempty(Ay)
         xy = xy + (Ay * xy + By * y_ctrl) * dt;
-    end
-    if ~isempty(Ap)
-        sat_err = uk - uk_unclamped;
-        epid_eff = epid + anti_windup_gain * sat_err;
-        if abs(sat_err) < 1e-9
-            xpid = xpid + (Ap * xpid + Bp * epid_eff) * dt;
-        else
-            xpid = xpid + 0.1 * (Ap * xpid + Bp * epid_eff) * dt;
-        end
     end
 
     xp = xp + (A * xp + B * uk) * dt;
@@ -270,44 +208,6 @@ diag.obs_gain_hist = obs_gain_hist;
 diag.y_iso_hist = y_iso_hist;
 diag.u_comp_hist = u_comp_hist;
 diag.isolation_conf_hist = isolation_conf_hist;
-end
-
-function reg = get_bumpless_reg(switcher_cfg)
-reg = 1e-4;
-if nargin >= 1 && isstruct(switcher_cfg) && isfield(switcher_cfg,'bumpless_reg') && ~isempty(switcher_cfg.bumpless_reg)
-    reg = switcher_cfg.bumpless_reg;
-end
-end
-
-function x = align_controller_state(ctrl_ss, input_value, desired_output, fallback_state, reg)
-x = fallback_state;
-try
-    Cc = ctrl_ss.C;
-    Dc = ctrl_ss.D;
-    if isempty(Cc)
-        return;
-    end
-    target = desired_output - Dc * input_value;
-    if isempty(ctrl_ss.A)
-        x = zeros(size(fallback_state));
-        return;
-    end
-    if nargin < 5 || isempty(reg)
-        reg = 1e-6;
-    end
-    if size(Cc,1) == 1
-        denom = Cc * Cc.' + reg;
-        x = (Cc.' / denom) * target;
-    else
-        Regl = reg * eye(size(Cc,2));
-        x = (Cc.' * Cc + Regl) \ (Cc.' * target);
-    end
-    if any(~isfinite(x))
-        x = fallback_state;
-    end
-catch
-    x = fallback_state;
-end
 end
 
 function [Aobs, Bobs, Cobs, Dobs, Lobs, ok] = build_recovery_observer(plant_ss, sensor_ss)

@@ -9,44 +9,36 @@ if ~exist(csvp,'file')
 end
 
 T = readtable(csvp);
-% Aggregate per unique parameter set (blend,recovery,reg,limits) across scenarios
-% Build a key
-keys = strcat(string(T.blend_time),'_',string(T.recovery_time),'_',string(T.bumpless_reg),'_',string(cellfun(@(c) sprintf('%g_%g',c(1),c(2)), T.actuator_limits,'UniformOutput',false)));
-T.key = keys;
-G = findgroups(T.key);
-S = splitapply(@(itae,yf,uj,up) deal(nanmean(itae), nanmean(yf), nanmean(uj), nanmean(up)), T.itae_res, T.y_res_final, T.u_jump, T.u_peak_rate, G);
+required = {'blend_time','recovery_time','bumpless_reg','isolation_tau','actuator_limits'};
+missing = required(~ismember(required, T.Properties.VariableNames));
+if ~isempty(missing)
+    error('Grid results missing required columns: %s', strjoin(missing, ', '));
+end
 
-agg = table();
-uniq = unique(keys);
-agg.key = uniq(:);
-agg.mean_itae = S(:,1); agg.mean_yfinal = S(:,2); agg.mean_ujump = S(:,3); agg.mean_upeak = S(:,4);
+limits_key = cellfun(@(c) sprintf('%g_%g', c(1), c(2)), T.actuator_limits, 'UniformOutput', false);
+T.key = strcat(string(T.blend_time), '_', string(T.recovery_time), '_', string(T.bumpless_reg), '_', string(T.isolation_tau), '_', string(limits_key));
 
-% Normalize metrics (robust to NaNs)
-score_table = table(); score_table.key = agg.key;
-m_itae = agg.mean_itae; m_uj = agg.mean_ujump; m_up = agg.mean_upeak;
-% replace NaN with large numbers for ITAE, and large for u metrics
-m_itae(isnan(m_itae)) = max(1e6, nanmax(m_itae(~isnan(m_itae)))*10);
-m_uj(isnan(m_uj)) = nanmax(m_uj(~isnan(m_uj))); m_up(isnan(m_up)) = nanmax(m_up(~isnan(m_up)));
+[G, key_list] = findgroups(T.key);
+mean_itae = splitapply(@mean, T.itae_res, G);
+mean_uj = splitapply(@mean, T.u_jump, G);
+mean_up = splitapply(@mean, T.u_peak_rate, G);
 
-% Min-max normalize (lower is better)
-fnorm = @(x) (x - nanmin(x)) ./ max(eps, (nanmax(x) - nanmin(x)));
-norm_itae = fnorm(m_itae);
-norm_uj = fnorm(m_uj);
-norm_up = fnorm(m_up);
+mean_itae(~isfinite(mean_itae)) = max(1e6, nanmax(mean_itae(isfinite(mean_itae))) * 10);
+mean_uj(~isfinite(mean_uj)) = nanmax(mean_uj(isfinite(mean_uj)));
+mean_up(~isfinite(mean_up)) = nanmax(mean_up(isfinite(mean_up)));
 
-% Weighted score: prioritize ITAE (0.6) then u_jump (0.2) and u_peak_rate (0.2)
-score = 0.6 * norm_itae + 0.2 * norm_uj + 0.2 * norm_up;
-
-[~,best_idx] = min(score);
-best_key = string(agg.key(best_idx));
+fnorm = @(x) (x - min(x)) ./ max(eps, (max(x) - min(x)));
+score = 0.6 * fnorm(mean_itae) + 0.2 * fnorm(mean_uj) + 0.2 * fnorm(mean_up);
+[~, best_idx] = min(score);
+best_key = string(key_list(best_idx));
 fprintf('Selected best key: %s (score=%g)\n', best_key, score(best_idx));
 
-% Extract parameters from a matching row in original table
 rowidx = find(T.key == best_key, 1, 'first');
 chosen = T(rowidx,:);
 best_cfg.blend_time = chosen.blend_time;
 best_cfg.recovery_time = chosen.recovery_time;
 best_cfg.bumpless_reg = chosen.bumpless_reg;
+best_cfg.isolation_tau = chosen.isolation_tau;
 best_cfg.actuator_limits = chosen.actuator_limits{1};
 
 % Write both a user-editable config and a locked config that Phase5 will
