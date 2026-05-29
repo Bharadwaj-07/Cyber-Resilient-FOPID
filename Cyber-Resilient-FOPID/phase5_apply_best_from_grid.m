@@ -9,6 +9,27 @@ if ~exist(csvp,'file')
 end
 
 T = readtable(csvp);
+% If a MAT version of the grid exists, prefer loading it to avoid re-parsing CSV quirks
+matp_grid = fullfile(paths5.mat, 'phase5_grid_search_results.mat');
+if exist(matp_grid,'file')
+    try
+        data = load(matp_grid);
+        if isfield(data,'T') && istable(data.T)
+            T = data.T;
+        elseif isfield(data,'results')
+            try
+                T = struct2table(data.results);
+            catch
+            end
+        elseif isfield(data,'grid_results')
+            try
+                T = struct2table(data.grid_results);
+            catch
+            end
+        end
+    catch
+    end
+end
 required = {'blend_time','recovery_time','bumpless_reg','isolation_tau'};
 required = [required, {'Q_scale','R_scale'}];
 missing = required(~ismember(required, T.Properties.VariableNames));
@@ -73,6 +94,19 @@ elseif ismember('actuator_limits_1', T.Properties.VariableNames) && ismember('ac
     end
 else
     error('Grid results missing actuator limits columns (expected actuator_limits or actuator_limits_1/2)');
+end
+
+
+% defensive check: ensure parsed limits match table rows; rebuild if mismatch
+if numel(limits_col) ~= height(T)
+    if ismember('actuator_limits_1', T.Properties.VariableNames) && ismember('actuator_limits_2', T.Properties.VariableNames)
+        nrows = height(T);
+        limits_col = cell(nrows,1);
+        for i=1:nrows, limits_col{i} = [double(T.actuator_limits_1(i)), double(T.actuator_limits_2(i))]; end
+    else
+        nrows = height(T);
+        limits_col = repmat({[-inf, inf]}, nrows, 1);
+    end
 end
 
 limits_key = cellfun(@(c) sprintf('%g_%g', c(1), c(2)), limits_col, 'UniformOutput', false);
