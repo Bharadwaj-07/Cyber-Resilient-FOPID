@@ -36,13 +36,16 @@ try
     Tfinal = 5; dt = 0.002; t = (0:dt:Tfinal)'; r = ones(size(t));
     fprintf('Running short baseline sim: dt=%.4f Tfinal=%.1f\n', dt, Tfinal);
     if ~isempty(C_2dof_r) && ~isempty(C_2dof_y)
-        y2 = simulate_closedloop_2dof_euler(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, t, r);
+        % Use the standalone attacked simulator with attacks disabled
+        attack_cfg = struct('enabled', false);
+        [y2, ~] = simulate_closedloop_2dof_euler_attacked(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, t, r, attack_cfg);
         fprintf('2DoF final y = %.4f\n', y2(end));
     else
         fprintf('Skipping 2DoF sim (controllers missing)\n');
     end
     if ~isempty(C_pid)
-        ypid = simulate_closedloop_pid_euler(ss(G_fwd), C_pid, t, r);
+        attack_cfg = struct('enabled', false);
+        ypid = simulate_closedloop_pid_euler_attacked(ss(G_fwd), ss(G_sen), C_pid, t, r, attack_cfg);
         fprintf('PID final y = %.4f\n', ypid(end));
     else
         fprintf('Skipping PID sim (controller missing)\n');
