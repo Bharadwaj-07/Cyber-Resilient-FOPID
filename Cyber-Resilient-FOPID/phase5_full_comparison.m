@@ -260,7 +260,7 @@ for i = 1:length(scenarios)
         C_pid_tuned = C_pid;
     end
     try
-        [u_res, mode_hist, switch_times, y_res] = simulate_resilient_closedloop_euler( ...
+        [u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler( ...
             ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid_tuned, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg);
         fprintf(lf, 'Resilient sim: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
     catch ME
@@ -295,13 +295,26 @@ for i = 1:length(scenarios)
     metrics.delta_ITAE_res_pid = metrics.ITAE_res - metrics.ITAE_pid;
     metrics.delta_ITAE_res_2dof = metrics.ITAE_res - metrics.ITAE_2dof;
 
+    % Diagnostics from resilient sim (observer/recovery)
+    if exist('diag','var') && isfield(diag,'attack_est_hist') && ~isempty(diag.attack_est_hist)
+        row_attack_est_max = safe_scalar(max(abs(diag.attack_est_hist)), 1e6);
+        row_attack_est_end = safe_scalar(diag.attack_est_hist(end), 1e6);
+    else
+        row_attack_est_max = NaN; row_attack_est_end = NaN;
+    end
+    if exist('diag','var') && isfield(diag,'obs_gain_hist') && ~isempty(diag.obs_gain_hist)
+        row_obs_gain_mean = safe_scalar(mean(diag.obs_gain_hist), 1e6);
+    else
+        row_obs_gain_mean = NaN;
+    end
+
     info2 = safe_stepinfo(y_2dof_sc, t);
     infoP = safe_stepinfo(y_pid_sc, t);
     infoR = safe_stepinfo(y_res, t);
 
     % Save per-scenario MAT and plot in the phase-specific artifact folders
     fname = fullfile(matdir, [sc.name '.mat']);
-    save(fname, 'sc', 'y_true', 'y_meas', 'residuals', 'attack_flag', 'detection_time', 'detection_delay', 'u_res', 'mode_hist', 'switch_times', 'y_res', 'metrics');
+    save(fname, 'sc', 'y_true', 'y_meas', 'residuals', 'attack_flag', 'detection_time', 'detection_delay', 'u_res', 'mode_hist', 'switch_times', 'y_res', 'metrics', 'attack_est_hist', 'y_hat_hist', 'obs_gain_hist');
     fprintf(lf, 'Saved results: %s\n', fname);
 
     % plot - include measured (attacked) signal, control action, and mark attack start
@@ -377,6 +390,9 @@ for i = 1:length(scenarios)
     end
     row.u_jump = safe_scalar(u_jump, 1e6);
     row.u_peak_rate = safe_scalar(u_peak_rate, 1e6);
+    row.attack_est_max = row_attack_est_max;
+    row.attack_est_end = row_attack_est_end;
+    row.obs_gain_mean = row_obs_gain_mean;
     rows{end+1} = row;
 end
 
@@ -855,7 +871,7 @@ function ss_sys = safe_controller_ss(C, plant_ss)
     end
 end
 
-function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_r, C_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg)
+function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_r, C_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg)
     % Self-consistent resilient closed-loop simulation.
     % Mode 1: 2DoF control u = C_r*r - C_y*y_meas
     % Mode 2: PID control on attacked measurement error
@@ -954,6 +970,11 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
         zhat = [];
     end
     attack_est = 0;
+    % diagnostics histories for post-mortem analysis
+    attack_est_hist = zeros(N,1);
+    y_hat_hist = zeros(N,1);
+    obs_gain_hist = zeros(N,1);
+
     for k = 1:N
         if k == 1
             dt = t(1);
@@ -1001,6 +1022,10 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
             innovation_gain = min(1, observer_innovation_limit / max(observer_innovation_limit, abs(innovation)));
             obs_gain = max(observer_min_gain, obs_gain * innovation_gain);
             zhat = zhat + (Aobs * zhat + Bobs * u_prev + obs_gain * (Lobs * innovation)) * dt;
+            % record diagnostics
+            attack_est_hist(k) = attack_est;
+            y_hat_hist(k) = y_hat;
+            obs_gain_hist(k) = obs_gain;
         else
             % Fallback if observer design fails: keep a conservative blended
             % estimate using the attacked measurement and plant output.
@@ -1010,52 +1035,10 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
                 beta = (t(k) - detection_time) / max(eps, recovery_time);
                 beta = min(max(beta, 0), 1);
                 y_ctrl = (1 - beta) * y_meas + beta * yk;
-            try
-                % Prefer a Kalman-style observer when available so recovery is
-                % less brittle than pure pole placement.
-                Gobs = eye(nobs);
-                Qn = 1e-3 * eye(nobs);
-                if size(Cobs,1) == 1
-                    Rn = 1e-2;
-                else
-                    Rn = 1e-2 * eye(size(Cobs,1));
-                end
-                Lobs = lqe(Aobs, Gobs, Cobs, Qn, Rn);
-            catch
-                try
-                    desired_poles = -max(2, nobs) - (0:nobs-1);
-                    Lobs = place(Aobs', Cobs', desired_poles)';
-                catch
-                    % fallback: try a slightly slower set of poles if the first set is
-                    % numerically awkward for the available observability structure.
-                    desired_poles = -max(2, nobs) - (0:nobs-1);
-                    Lobs = place(Aobs', Cobs', desired_poles)';
-                end
+            else
+                y_ctrl = yk;
             end
-                % Bumpless transfer: initialize PID state so the output matches
-                % the control effort already being applied by the 2DoF controller.
-                if nx_pidx > 0
-                    epid_now = r(k) - y_ctrl;
-                    % Use configured regularization for bumpless alignment
-                    if isfield(switcher_cfg,'bumpless_reg')
-                        regval = switcher_cfg.bumpless_reg;
-                    else
-                        regval = [];
-                    end
-                    xpid = align_controller_state(Cpid_ss, epid_now, u_prev, xpid, regval);
-                    % If the aligned PID output differs hugely from current effort,
-                    % dampen integrator states to avoid immediate large jumps.
-                    try
-                        pid_out_now = Cpm * xpid + Dp * epid_now;
-                        if ~isfinite(pid_out_now), pid_out_now = 0; end
-                        if abs(pid_out_now - u_prev) > 0.5 * max(1, abs(u_prev))
-                            xpid = 0.1 * xpid;
-                        end
-                    catch
-                        % ignore and keep aligned state
-                    end
-                end
-            end
+        end
         end
         mode_history(k) = mode;
 
@@ -1111,6 +1094,17 @@ function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_eule
 
     if isempty(switch_times)
         switch_times = zeros(0,3);
+    end
+    % diagnostics output
+    diag = struct();
+    try
+        diag.attack_est_hist = attack_est_hist;
+        diag.y_hat_hist = y_hat_hist;
+        diag.obs_gain_hist = obs_gain_hist;
+    catch
+        diag.attack_est_hist = [];
+        diag.y_hat_hist = [];
+        diag.obs_gain_hist = [];
     end
 end
 
