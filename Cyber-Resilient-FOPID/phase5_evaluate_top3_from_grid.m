@@ -15,9 +15,18 @@ T = readtable(csvp);
 n = height(T);
 keys = strings(n,1);
 for i=1:n
-    a_limits = '';
+    % assemble actuator limits for key (support two CSV formats)
     if ismember('actuator_limits', T.Properties.VariableNames)
-        try, a_limits = T.actuator_limits{i}; catch, a_limits = num2str(T.actuator_limits(i)); end
+        try
+            lim = T.actuator_limits{i};
+            a_limits = sprintf('%g_%g', lim(1), lim(2));
+        catch
+            a_limits = num2str(T.actuator_limits(i));
+        end
+    elseif ismember('actuator_limits_1', T.Properties.VariableNames) && ismember('actuator_limits_2', T.Properties.VariableNames)
+        a_limits = sprintf('%g_%g', T.actuator_limits_1(i), T.actuator_limits_2(i));
+    else
+        a_limits = 'na';
     end
     keys(i) = sprintf('b%g_r%g_i%g_q%g_R%g_a%s', T.blend_time(i), T.recovery_time(i), T.isolation_tau(i), T.Q_scale(i), T.R_scale(i), a_limits);
 end
@@ -37,7 +46,9 @@ for k = 1:numel(uniq_keys)
     agg(ai).recovery_time = T.recovery_time(r);
     agg(ai).isolation_tau = T.isolation_tau(r);
     if ismember('actuator_limits', T.Properties.VariableNames)
-        agg(ai).actuator_limits = T.actuator_limits{r};
+            agg(ai).actuator_limits = T.actuator_limits{r};
+        elseif ismember('actuator_limits_1', T.Properties.VariableNames) && ismember('actuator_limits_2', T.Properties.VariableNames)
+            agg(ai).actuator_limits = [T.actuator_limits_1(r), T.actuator_limits_2(r)];
     else
         agg(ai).actuator_limits = [-inf inf];
     end

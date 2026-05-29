@@ -9,14 +9,25 @@ if ~exist(csvp,'file')
 end
 
 T = readtable(csvp);
-required = {'blend_time','recovery_time','bumpless_reg','isolation_tau','actuator_limits'};
+required = {'blend_time','recovery_time','bumpless_reg','isolation_tau'};
 required = [required, {'Q_scale','R_scale'}];
 missing = required(~ismember(required, T.Properties.VariableNames));
 if ~isempty(missing)
     error('Grid results missing required columns: %s', strjoin(missing, ', '));
 end
 
-limits_key = cellfun(@(c) sprintf('%g_%g', c(1), c(2)), T.actuator_limits, 'UniformOutput', false);
+% Support two CSV formats: a single cell-array column `actuator_limits`
+% or two numeric columns `actuator_limits_1` and `actuator_limits_2`.
+if ismember('actuator_limits', T.Properties.VariableNames)
+    limits_col = T.actuator_limits;
+elseif ismember('actuator_limits_1', T.Properties.VariableNames) && ismember('actuator_limits_2', T.Properties.VariableNames)
+    % combine numeric columns into cell array of [min max]
+    limits_col = arrayfun(@(a,b) { [a b] }, T.actuator_limits_1, T.actuator_limits_2);
+else
+    error('Grid results missing actuator limits columns (expected actuator_limits or actuator_limits_1/2)');
+end
+
+limits_key = cellfun(@(c) sprintf('%g_%g', c(1), c(2)), limits_col, 'UniformOutput', false);
 T.key = strcat(string(T.blend_time), '_', string(T.recovery_time), '_', string(T.bumpless_reg), '_', string(T.isolation_tau), '_', string(limits_key));
 
 [G, key_list] = findgroups(T.key);
@@ -40,7 +51,8 @@ best_cfg.blend_time = chosen.blend_time;
 best_cfg.recovery_time = chosen.recovery_time;
 best_cfg.bumpless_reg = chosen.bumpless_reg;
 best_cfg.isolation_tau = chosen.isolation_tau;
-best_cfg.actuator_limits = chosen.actuator_limits{1};
+% pick actuator limits from the assembled limits_col
+best_cfg.actuator_limits = limits_col{rowidx};
 if ismember('Q_scale', T.Properties.VariableNames)
     best_cfg.Q_scale = chosen.Q_scale;
 end
