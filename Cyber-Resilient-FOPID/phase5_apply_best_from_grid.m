@@ -5,6 +5,7 @@ paths5 = phase_artifacts('phase5');
 csvp = fullfile(paths5.csv, 'phase5_grid_search_results.csv');
 outmat = fullfile(paths5.root, 'phase5_config.mat');
 lockedmat = fullfile(paths5.root, 'phase5_locked.mat');
+matp_grid = fullfile(paths5.mat, 'phase5_grid_search_results.mat');
 
 % If a locked config already exists, reuse it directly instead of re-selecting.
 if exist(lockedmat, 'file')
@@ -23,32 +24,40 @@ if exist(lockedmat, 'file')
     end
 end
 
+% If the grid MAT exists, try to reuse the saved rowwise result table or struct.
+if exist(matp_grid, 'file')
+    try
+        data = load(matp_grid);
+        if isfield(data,'results') && ~isempty(data.results)
+            % Choose the row with the lowest ITAE directly from the saved results.
+            [~, best_row] = min(arrayfun(@(s) safe_scalar(s.itae_res, inf), data.results));
+            chosen = data.results(best_row);
+            best_cfg = struct();
+            fields_to_copy = {'blend_time','recovery_time','bumpless_reg','isolation_tau','Q_scale','R_scale','actuator_limits'};
+            for iField = 1:numel(fields_to_copy)
+                f = fields_to_copy{iField};
+                if isfield(chosen, f)
+                    best_cfg.(f) = chosen.(f);
+                end
+            end
+            if ~isfield(best_cfg,'actuator_limits')
+                best_cfg.actuator_limits = [-inf inf];
+            end
+            save(outmat, '-struct', 'best_cfg');
+            save(lockedmat, '-struct', 'best_cfg');
+            fprintf('Reused existing grid MAT %s and wrote %s / %s\n', matp_grid, outmat, lockedmat);
+            return;
+        end
+    catch gridMatErr
+        fprintf('Could not reuse grid MAT (%s); falling back to CSV selection.\n', gridMatErr.message);
+    end
+end
+
 if ~exist(csvp,'file')
     error('Grid results not found: %s', csvp);
 end
 
 T = readtable(csvp);
-% If a MAT version of the grid exists, prefer loading it to avoid re-parsing CSV quirks
-matp_grid = fullfile(paths5.mat, 'phase5_grid_search_results.mat');
-if exist(matp_grid,'file')
-    try
-        data = load(matp_grid);
-        if isfield(data,'T') && istable(data.T)
-            T = data.T;
-        elseif isfield(data,'results')
-            try
-                T = struct2table(data.results);
-            catch
-            end
-        elseif isfield(data,'grid_results')
-            try
-                T = struct2table(data.grid_results);
-            catch
-            end
-        end
-    catch
-    end
-end
 required = {'blend_time','recovery_time','bumpless_reg','isolation_tau'};
 required = [required, {'Q_scale','R_scale'}];
 missing = required(~ismember(required, T.Properties.VariableNames));
@@ -115,17 +124,9 @@ else
     error('Grid results missing actuator limits columns (expected actuator_limits or actuator_limits_1/2)');
 end
 
-
-% defensive check: ensure parsed limits match table rows; rebuild if mismatch
 if numel(limits_col) ~= height(T)
-    if ismember('actuator_limits_1', T.Properties.VariableNames) && ismember('actuator_limits_2', T.Properties.VariableNames)
-        nrows = height(T);
-        limits_col = cell(nrows,1);
-        for i=1:nrows, limits_col{i} = [double(T.actuator_limits_1(i)), double(T.actuator_limits_2(i))]; end
-    else
-        nrows = height(T);
-        limits_col = repmat({[-inf, inf]}, nrows, 1);
-    end
+    nrows = height(T);
+    limits_col = repmat({[-inf, inf]}, nrows, 1);
 end
 
 limits_key = cellfun(@(c) sprintf('%g_%g', c(1), c(2)), limits_col, 'UniformOutput', false);
