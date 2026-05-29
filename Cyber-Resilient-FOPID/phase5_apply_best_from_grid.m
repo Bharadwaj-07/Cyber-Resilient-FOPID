@@ -10,6 +10,7 @@ end
 
 T = readtable(csvp);
 required = {'blend_time','recovery_time','bumpless_reg','isolation_tau','actuator_limits'};
+required = [required, {'Q_scale','R_scale'}];
 missing = required(~ismember(required, T.Properties.VariableNames));
 if ~isempty(missing)
     error('Grid results missing required columns: %s', strjoin(missing, ', '));
@@ -40,6 +41,12 @@ best_cfg.recovery_time = chosen.recovery_time;
 best_cfg.bumpless_reg = chosen.bumpless_reg;
 best_cfg.isolation_tau = chosen.isolation_tau;
 best_cfg.actuator_limits = chosen.actuator_limits{1};
+if ismember('Q_scale', T.Properties.VariableNames)
+    best_cfg.Q_scale = chosen.Q_scale;
+end
+if ismember('R_scale', T.Properties.VariableNames)
+    best_cfg.R_scale = chosen.R_scale;
+end
 
 % Write both a user-editable config and a locked config that Phase5 will
 % prioritize. The locked config ensures the selected settings are applied

@@ -82,7 +82,7 @@ else
     end
 end
 
-[Aobs, Bobs, Cobs, Dobs, Lobs, observer_ok] = build_recovery_observer(plant_ss, sensor_ss);
+[Aobs, Bobs, Cobs, Dobs, Lobs, observer_ok] = build_recovery_observer(plant_ss, sensor_ss, switcher_cfg);
 if observer_ok
     zhat = zeros(size(Aobs,1),1);
 else

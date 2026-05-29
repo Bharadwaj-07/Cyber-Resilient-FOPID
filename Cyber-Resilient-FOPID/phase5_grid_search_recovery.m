@@ -33,14 +33,18 @@ scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency
 blend_list = [0.2, 0.5, 1.0];
 recovery_list = [0.5, 1.0, 2.0];
 isolation_list = [0.1, 0.25, 0.5];
+Q_scale_list = [0.1, 0.5, 1.0];
+R_scale_list = [0.1, 0.5, 1.0];
 act_limits = {[-2 2], [-5 5]};
 
 results = []; row = 0;
 for ib = 1:numel(blend_list)
     for ir = 1:numel(recovery_list)
         for ii = 1:numel(isolation_list)
-            for ia = 1:numel(act_limits)
-                cfg = struct('blend_time',blend_list(ib),'recovery_time',recovery_list(ir),'bumpless_reg',1e-3,'isolation_tau',isolation_list(ii),'observer_recovery_time',recovery_list(ir),'observer_innovation_limit',0.05,'observer_min_gain',0.02,'actuator_limits',act_limits{ia});
+            for iq = 1:numel(Q_scale_list)
+                for irs = 1:numel(R_scale_list)
+                    for ia = 1:numel(act_limits)
+                        cfg = struct('blend_time',blend_list(ib),'recovery_time',recovery_list(ir),'bumpless_reg',1e-3,'isolation_tau',isolation_list(ii),'observer_recovery_time',recovery_list(ir),'observer_innovation_limit',0.05,'observer_min_gain',0.02,'Q_scale',Q_scale_list(iq),'R_scale',R_scale_list(irs),'actuator_limits',act_limits{ia});
                 for is = 1:numel(scenarios)
                     sc = scenarios{is};
                     attack_cfg = struct('enabled',true,'type',sc.type,'start_time',sc.start_time);
@@ -68,7 +72,7 @@ for ib = 1:numel(blend_list)
                         u_comp_peak = NaN;
                     end
                     row = row + 1;
-                    results(row).scenario = sc.name; results(row).blend_time = cfg.blend_time; results(row).recovery_time = cfg.recovery_time; results(row).bumpless_reg = cfg.bumpless_reg; results(row).isolation_tau = cfg.isolation_tau; results(row).actuator_limits = cfg.actuator_limits;
+                    results(row).scenario = sc.name; results(row).blend_time = cfg.blend_time; results(row).recovery_time = cfg.recovery_time; results(row).bumpless_reg = cfg.bumpless_reg; results(row).isolation_tau = cfg.isolation_tau; results(row).actuator_limits = cfg.actuator_limits; results(row).Q_scale = cfg.Q_scale; results(row).R_scale = cfg.R_scale;
                     results(row).itae_res = itae_res; results(row).y_res_final = safe_scalar(y_res(end),1e6); results(row).u_jump = u_jump; results(row).u_peak_rate = u_peak_rate; results(row).u_comp_peak = u_comp_peak;
                 end
             end
