@@ -135,7 +135,19 @@ for k = 1:N
         if isfinite(detection_time) && t(k) >= detection_time
             iso_gain = min(1, dt / max(eps, isolation_tau));
             attack_est = (1 - iso_gain) * attack_est + iso_gain * innovation;
-            y_iso = y_meas - attack_est;
+                % Clamp attack estimate to avoid large subtraction causing
+                % implausible cleaned measurements and actuator saturation.
+                max_attack_est = max(abs(y_hat)*2, 10 * observer_innovation_limit);
+                if ~isfinite(max_attack_est) || max_attack_est <= 0
+                    max_attack_est = 1.0;
+                end
+                attack_est = max(min(attack_est, max_attack_est), -max_attack_est);
+                y_iso = y_meas - attack_est;
+                % Safety fallback: if isolated measurement is unreasonable,
+                % trust the observer output instead of the aggressive isolation.
+                if ~isfinite(y_iso) || abs(y_iso) > 1e3
+                    y_iso = y_hat;
+                end
             isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
             y_ctrl = y_iso;
             obs_gain = max(observer_min_gain, 1 - max(0, t(k) - detection_time) / observer_recovery_time);
