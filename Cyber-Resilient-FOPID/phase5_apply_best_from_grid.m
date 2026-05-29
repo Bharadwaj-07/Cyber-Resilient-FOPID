@@ -4,6 +4,25 @@
 paths5 = phase_artifacts('phase5');
 csvp = fullfile(paths5.csv, 'phase5_grid_search_results.csv');
 outmat = fullfile(paths5.root, 'phase5_config.mat');
+lockedmat = fullfile(paths5.root, 'phase5_locked.mat');
+
+% If a locked config already exists, reuse it directly instead of re-selecting.
+if exist(lockedmat, 'file')
+    try
+        locked = load(lockedmat);
+        if isfield(locked, 'best_cfg') && isstruct(locked.best_cfg)
+            best_cfg = locked.best_cfg;
+        else
+            best_cfg = locked;
+        end
+        save(outmat, '-struct', 'best_cfg');
+        fprintf('Reused locked Phase5 config from %s and wrote %s\n', lockedmat, outmat);
+        return;
+    catch lockedErr
+        fprintf('Locked Phase5 config could not be reused (%s); falling back to grid selection.\n', lockedErr.message);
+    end
+end
+
 if ~exist(csvp,'file')
     error('Grid results not found: %s', csvp);
 end
@@ -146,6 +165,5 @@ end
 % prioritize. The locked config ensures the selected settings are applied
 % consistently across runs until manually changed.
 save(outmat, '-struct', 'best_cfg');
-lockedmat = fullfile(paths5.root, 'phase5_locked.mat');
 save(lockedmat, '-struct', 'best_cfg');
 fprintf('Wrote Phase5 config to %s and locked config to %s\n', outmat, lockedmat);
