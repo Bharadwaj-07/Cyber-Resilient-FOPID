@@ -1039,7 +1039,6 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
         zhat = [];
     end
     attack_est = 0;
-    comp_state = 0;
     % diagnostics histories for post-mortem analysis
     attack_est_hist = zeros(N,1);
     y_hat_hist = zeros(N,1);
@@ -1087,13 +1086,11 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
                 y_iso = y_meas - attack_est;
                 isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
                 y_ctrl = (1 - isolation_conf) * y_meas + isolation_conf * y_iso;
-                comp_state = comp_state + (compensator_gain * attack_est - comp_state) * dt / max(eps, compensator_tau);
                 obs_gain = max(observer_min_gain, 1 - max(0, t(k) - detection_time) / observer_recovery_time);
             else
                 % Before detection, stay measurement-driven so the observer
                 % remains synchronized with the nominal closed loop.
                 attack_est = 0;
-                comp_state = 0;
                 y_iso = y_meas;
                 y_ctrl = y_meas;
                 isolation_conf = 0;
@@ -1108,9 +1105,9 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
             obs_gain_hist(k) = obs_gain;
             y_iso_hist(k) = y_iso;
             isolation_conf_hist(k) = isolation_conf;
-            u_comp_hist(k) = max(min(-comp_state, compensator_limit), -compensator_limit);
+            u_comp_hist(k) = 0;
             if ~switch_recorded && isfinite(detection_time) && t(k) >= detection_time
-                switch_times = [t(k), 1, 2];
+                switch_times = [t(k), 1, 3];
                 switch_recorded = true;
             end
         else
@@ -1128,7 +1125,6 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
             y_iso = y_ctrl;
             isolation_conf = 0;
             attack_est = y_meas - y_ctrl;
-            comp_state = 0;
             u_comp_hist(k) = 0;
             y_iso_hist(k) = y_iso;
             isolation_conf_hist(k) = isolation_conf;
@@ -1139,7 +1135,7 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
         end
         if observer_ok
             if isfinite(detection_time) && t(k) >= detection_time
-                mode = 2;
+                mode = 3;
             else
                 mode = 1;
             end
@@ -1159,13 +1155,12 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
         epid = r(k) - y_ctrl;
         pid_out = Cpm * xpid + Dp * epid;
 
-        % Nominal control uses the isolated measurement. The compensator adds
-        % a bounded correction from the estimated attack, so recovery is not
-        % just a time-based blend.
+        % Nominal control uses the isolated measurement. Recovery is driven by
+        % the attack-isolation estimate rather than a control-side correction.
         uk_nominal = ur - uy;
         if observer_ok
             if isfinite(detection_time) && t(k) >= detection_time
-                uk_unclamped = uk_nominal + max(min(-comp_state, compensator_limit), -compensator_limit);
+                uk_unclamped = uk_nominal;
             else
                 uk_unclamped = uk_nominal;
             end
