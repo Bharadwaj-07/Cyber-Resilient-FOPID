@@ -267,6 +267,31 @@ for k = 1:N
         if ~switch_recorded && isfinite(detection_time) && t(k) >= detection_time
             switch_times = [t(k), 1, 3];
             switch_recorded = true;
+            % Bumpless transfer: adjust controller state `xy` so the post-switch
+            % controller output `uy = Cym*xy + Dy*y_ctrl` matches the previous
+            % desired contribution (ur - u_prev) to avoid instantaneous jumps.
+            try
+                ur_now = Crm * xr + Dr * r(k);
+                desired_uy = ur_now - u_prev;
+                if ~isempty(Cym) && ~isempty(xy)
+                    % current uy
+                    cur_uy = Cym * xy + Dy * y_ctrl;
+                    err = (desired_uy - cur_uy);
+                    % distribute correction in least-squares sense across xy
+                    % xy_delta = Cym' * (err / (Cym*Cym' + eps))
+                    denom = (Cym * Cym');
+                    if denom == 0
+                        xy = xy + 0.5 * xy; % fallback: scale integrator
+                    else
+                        xy = xy + (Cym') * (err / (denom + eps));
+                    end
+                elseif ~isempty(xy)
+                    % If Cym empty but states exist, soft-reset as fallback
+                    xy = 0.5 * xy;
+                end
+            catch
+                if ~isempty(xy), xy = 0.5 * xy; end
+            end
         end
     end
 
