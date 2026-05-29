@@ -127,6 +127,10 @@ for is = 1:numel(scenarios)
     sgtitle(sprintf('Augmented comparison - %s', sc.name), 'Interpreter', 'none');
     plotfile = fullfile(plotdir, sprintf('%s_augmented_compare.png', sc.name));
     save_plot(hf, plotfile);
+    % Also copy to top-level results folder for easy aggregation
+    results_plot_dir = fullfile('results','phase5','plots','augmented');
+    if ~exist(results_plot_dir,'dir'), mkdir(results_plot_dir,'recursive'); end
+    try copyfile(plotfile, fullfile(results_plot_dir, sprintf('%s_augmented_compare.png', sc.name))); catch, end
     close(hf);
 
     % Small summary bar plot for the scenario.
@@ -139,6 +143,7 @@ for is = 1:numel(scenarios)
     title(sprintf('ITAE summary - %s', sc.name), 'Interpreter', 'none');
     plotfile2 = fullfile(plotdir, sprintf('%s_augmented_itae.png', sc.name));
     save_plot(hf2, plotfile2);
+    try copyfile(plotfile2, fullfile(results_plot_dir, sprintf('%s_augmented_itae.png', sc.name))); catch, end
     close(hf2);
 
     row = row + 1;

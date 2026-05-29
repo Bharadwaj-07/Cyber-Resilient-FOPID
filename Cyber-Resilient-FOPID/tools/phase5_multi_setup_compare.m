@@ -80,4 +80,47 @@ T = struct2table(results);
 if ~exist(paths5.csv,'dir'), mkdir(paths5.csv); end
 writetable(T, outcsv);
 fprintf('Wrote multi-setup comparison to %s\n', outcsv);
+% attempt to generate plots using available per-scenario MATs
+try
+    create_multi_plots(T, t);
+    fprintf('Saved multi-setup plots to phase5 artifacts and results/phase5/plots/multi\n');
+catch
+    fprintf('Could not generate multi-setup plots (missing MAT files)\n');
+end
+end
+
+% Create per-scenario plots under Phase5 artifacts and top-level results
+function create_multi_plots(results_table, t)
+    paths5 = phase_artifacts('phase5');
+    plotdir = fullfile(paths5.plots,'multi'); if ~exist(plotdir,'dir'), mkdir(plotdir); end
+    results_plot_dir = fullfile('results','phase5','plots','multi'); if ~exist(results_plot_dir,'dir'), mkdir(results_plot_dir,'recursive'); end
+    for i = 1:height(results_table)
+        sc = results_table.scenario{i};
+        % Load per-scenario MAT files if available
+        try
+            matf = fullfile(paths5.mat, [sc '.mat']);
+            if exist(matf,'file')
+                S = load(matf);
+                y_pid = S.y_pid_sc; y_1d = S.y_1dof_sc; y_2d = S.y_2dof_sc; y_res = S.y_res;
+            else
+                % fallbacks: use table values (final only)
+                y_pid = zeros(size(t)); y_1d = zeros(size(t)); y_2d = zeros(size(t)); y_res = zeros(size(t));
+            end
+        catch
+            y_pid = zeros(size(t)); y_1d = zeros(size(t)); y_2d = zeros(size(t)); y_res = zeros(size(t));
+        end
+        hf = figure('Visible','off','Color','w');
+        plot(t, y_1d, 'c', t, y_2d, 'b', t, y_pid, 'g', t, y_res, 'r');
+        legend('1DoF','2DoF','PID','Resilient'); title(['Multi-setup - ' sc]); grid on;
+        plotfile = fullfile(plotdir, [sc '_multi_compare.png']); save_plot(hf, plotfile); close(hf);
+        try copyfile(plotfile, fullfile(results_plot_dir, [sc '_multi_compare.png'])); catch, end
+    end
+end
+
+function save_plot(hf, filePath)
+    try
+        exportgraphics(hf, filePath, 'Resolution', 150);
+    catch
+        saveas(hf, filePath);
+    end
 end
