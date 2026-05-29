@@ -213,6 +213,33 @@ try
         phase5_full_comparison();
         fprintf(runfid,'phase5_full_comparison completed\n'); fprintf(runfid,'phase5_full_comparison completed\n');
         run_summary(end+1,:) = {'phase5_full_comparison','phase5_full_comparison','ok'};
+        % Run additional Phase5 comparison scripts if present
+        if exist('tools/phase5_multi_setup_compare.m','file')
+            try
+                fprintf('Running tools/phase5_multi_setup_compare...\n'); fprintf(runfid,'Running tools/phase5_multi_setup_compare...\n');
+                tools/phase5_multi_setup_compare();
+                fprintf(runfid,'phase5_multi_setup_compare completed\n');
+                run_summary(end+1,:) = {'phase5_multi_setup_compare','tools/phase5_multi_setup_compare','ok'};
+            catch MEm
+                fprintf(runfid,'phase5_multi_setup_compare failed: %s\n', MEm.message);
+                run_summary(end+1,:) = {'phase5_multi_setup_compare','tools/phase5_multi_setup_compare','failed'};
+            end
+        else
+            fprintf(runfid,'phase5_multi_setup_compare not found - skipping\n');
+        end
+        if exist('tools/phase5_augmented_compare.m','file')
+            try
+                fprintf('Running tools/phase5_augmented_compare...\n'); fprintf(runfid,'Running tools/phase5_augmented_compare...\n');
+                tools/phase5_augmented_compare();
+                fprintf(runfid,'phase5_augmented_compare completed\n');
+                run_summary(end+1,:) = {'phase5_augmented_compare','tools/phase5_augmented_compare','ok'};
+            catch MEnt
+                fprintf(runfid,'phase5_augmented_compare failed: %s\n', MEnt.message);
+                run_summary(end+1,:) = {'phase5_augmented_compare','tools/phase5_augmented_compare','failed'};
+            end
+        else
+            fprintf(runfid,'phase5_augmented_compare not found - skipping\n');
+        end
     else
         fprintf('phase5_full_comparison not found - skipping\n'); fprintf(runfid,'phase5_full_comparison not found - skipping\n');
         run_summary(end+1,:) = {'phase5_full_comparison','phase5_full_comparison','missing'};
