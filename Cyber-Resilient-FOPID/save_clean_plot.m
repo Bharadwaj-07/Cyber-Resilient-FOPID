@@ -64,8 +64,10 @@ try
                     set(tl, 'TileSpacing', 'compact', 'Padding', 'compact');
                 catch
                 end
+                % Tiled layouts manage axes geometry themselves; avoid direct Position edits.
+                continue;
             end
-            % tighten position based on TightInset
+            % tighten position based on TightInset for standalone axes only
             pos = get(ax, 'Position');
             ti = get(ax, 'TightInset');
             % compute a slightly looser tight position to preserve breathing room
