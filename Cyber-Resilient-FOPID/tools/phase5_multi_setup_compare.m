@@ -27,6 +27,7 @@ if ~exist('C_1dof','var') || isempty(C_1dof)
     C_1dof = C_pid;
 end
 
+
 % Time base and scenarios (shorter Tfinal for quick comparisons)
 Tfinal = 25; dt = 0.002; t = (0:dt:Tfinal)'; r = ones(size(t));
 scenarios = {};

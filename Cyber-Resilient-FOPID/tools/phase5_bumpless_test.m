@@ -21,6 +21,7 @@ scenarios{end+1} = struct('name','bias_large','type','bias','magnitude',0.5,'sta
 scenarios{end+1} = struct('name','ramp','type','ramp','slope',0.05,'start_time',5);
 scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency',1,'start_time',5);
 
+
 for is = 1:numel(scenarios)
     sc = scenarios{is};
     attack_cfg = struct('enabled',true,'type',sc.type,'start_time',sc.start_time);

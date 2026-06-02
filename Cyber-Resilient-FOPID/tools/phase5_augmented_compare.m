@@ -28,6 +28,7 @@ if ~exist('C_2dof_y','var') || isempty(C_2dof_y)
 end
 
 % Scenarios
+
 Tfinal = 25; dt = 0.002; t = (0:dt:Tfinal)'; r = ones(size(t));
 scenarios = {};
 scenarios{end+1} = struct('name','bias_small','type','bias','magnitude',0.1,'start_time',5);
