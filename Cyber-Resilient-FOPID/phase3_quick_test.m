@@ -115,7 +115,8 @@ try
     shade_attack_window(gca, attack_config.start_time, t(end), [0.65 0.80 1.0], 0.18);
     legend('r_{ref}','y_{true}','y_{meas}','Location','best');
     if isfield(attack_config,'start_time') && isfinite(attack_config.start_time)
-        xline(attack_config.start_time, 'b-.', 'Attack start');
+        xline(attack_config.start_time, 'b-.', 'HandleVisibility', 'off');
+        add_event_label(gca, attack_config.start_time, 'Attack start', 'left');
     end
     title('Reference, true output, and attacked measurement'); grid on;
 
@@ -123,11 +124,13 @@ try
     plot(t, residuals, 'Color', [0.4940 0.1840 0.5560], 'LineWidth', 1.1); hold on;
     shade_attack_window(gca, attack_config.start_time, t(end), [0.65 0.80 1.0], 0.18);
     if ~isnan(detection_time)
-        xline(detection_time, 'r--', 'LineWidth', 1.5);
+        xline(detection_time, 'r--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+        add_event_label(gca, detection_time, 'Detection', 'right');
     end
     plot(t, attack_signal, 'Color', [0.4660 0.6740 0.1880], 'LineWidth', 1.0);
     if isfield(attack_config,'start_time') && isfinite(attack_config.start_time)
-        xline(attack_config.start_time, 'b-.', 'Attack start');
+        xline(attack_config.start_time, 'b-.', 'HandleVisibility', 'off');
+        add_event_label(gca, attack_config.start_time, 'Attack start', 'left');
     end
     ylabel('Residual / Attack'); grid on; title('Residual and injection overlay');
 

@@ -369,18 +369,25 @@ for i = 1:length(scenarios)
     title(['Outputs - ' sc.name]); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
     if isfield(attack_cfg,'start_time') && ~isempty(attack_cfg.start_time) && isfinite(attack_cfg.start_time)
-        xline(attack_cfg.start_time, 'm-.', 'Attack start');
+        xline(attack_cfg.start_time, 'm-.', 'HandleVisibility', 'off');
+        add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
     end
 
     subplot(4,1,2);
     plot(t, u_res, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.1); hold on; xlabel('Time (s)'); ylabel('u'); title('Control action (resilient)'); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
-    if ~isnan(detection_time), xline(detection_time,'r--','Detection'); end
+    if ~isnan(detection_time)
+        xline(detection_time,'r--','HandleVisibility','off');
+        add_event_label(gca, detection_time, 'Detection', 'right');
+    end
 
     subplot(4,1,3);
     plot(t, residuals, 'Color', [0.4940 0.1840 0.5560], 'LineWidth', 1.1); title('Residuals'); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
-    if ~isnan(detection_time), xline(detection_time,'r--','Detection'); end
+    if ~isnan(detection_time)
+        xline(detection_time,'r--','HandleVisibility','off');
+        add_event_label(gca, detection_time, 'Detection', 'right');
+    end
 
     subplot(4,1,4);
     if isempty(mode_hist)

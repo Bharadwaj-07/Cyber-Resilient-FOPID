@@ -47,6 +47,10 @@ if ~isempty(fig) && isgraphics(fig, 'figure')
             % Prefer boxed legend with white background and subtle edge
             set(leg(k), 'FontName', 'Arial', 'FontSize', 11, ...
                 'Box', 'on', 'Color', 'w', 'EdgeColor', 0.85 * [1 1 1], 'Interpreter', 'none');
+            try
+                set(leg(k), 'TextColor', [0 0 0]);
+            catch
+            end
             % Place legend outside if possible to avoid covering data
             try
                 set(leg(k), 'Location', 'bestoutside', 'Orientation', 'vertical');

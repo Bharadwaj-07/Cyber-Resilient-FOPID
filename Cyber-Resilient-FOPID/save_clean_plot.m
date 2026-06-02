@@ -22,6 +22,10 @@ try
         try
             set(legs(k), 'Interpreter', 'none');
             set(legs(k), 'Box', 'on', 'Color', 'w', 'EdgeColor', 0.85*[1 1 1]);
+            try
+                set(legs(k), 'TextColor', [0 0 0]);
+            catch
+            end
             set(legs(k), 'Location', 'bestoutside');
         catch
             try

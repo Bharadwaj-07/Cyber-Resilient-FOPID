@@ -80,7 +80,8 @@ for is = 1:numel(scenarios)
     grid on; title('PID: baseline vs augmented'); ylabel('y');
     legend('baseline PID','augmented PID','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
-    xline(attack_cfg.start_time,'m-.','Attack start');
+    xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
+    add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
 
     nexttile;
     plot(t, abs(r - y_pid), '--', 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.0); hold on;
@@ -88,7 +89,8 @@ for is = 1:numel(scenarios)
     grid on; title('PID tracking error'); ylabel('|e|');
     legend('baseline PID','augmented PID','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
-    xline(attack_cfg.start_time,'m-.','Attack start');
+    xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
+    add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
 
     nexttile;
     plot(t, y_1dof, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.2); hold on;
@@ -96,7 +98,8 @@ for is = 1:numel(scenarios)
     grid on; title('1DoF: baseline vs augmented'); ylabel('y');
     legend('baseline 1DoF','augmented 1DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
-    xline(attack_cfg.start_time,'m-.','Attack start');
+    xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
+    add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
 
     nexttile;
     plot(t, abs(r - y_1dof), '--', 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.0); hold on;
@@ -104,7 +107,8 @@ for is = 1:numel(scenarios)
     grid on; title('1DoF tracking error'); ylabel('|e|');
     legend('baseline 1DoF','augmented 1DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
-    xline(attack_cfg.start_time,'m-.','Attack start');
+    xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
+    add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
 
     nexttile;
     plot(t, y_2dof, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.2); hold on;
@@ -112,7 +116,8 @@ for is = 1:numel(scenarios)
     grid on; title('2DoF: baseline vs augmented'); xlabel('Time (s)'); ylabel('y');
     legend('baseline 2DoF','augmented 2DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
-    xline(attack_cfg.start_time,'m-.','Attack start');
+    xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
+    add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
 
     nexttile;
     plot(t, abs(r - y_2dof), '--', 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.0); hold on;
@@ -120,7 +125,8 @@ for is = 1:numel(scenarios)
     grid on; title('2DoF tracking error'); xlabel('Time (s)'); ylabel('|e|');
     legend('baseline 2DoF','augmented 2DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
-    xline(attack_cfg.start_time,'m-.','Attack start');
+    xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
+    add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
 
     sgtitle(sprintf('Augmented comparison - %s', sc.name), 'Interpreter', 'none');
     plotfile = fullfile(plotdir, sprintf('%s_augmented_compare.png', sc.name));
