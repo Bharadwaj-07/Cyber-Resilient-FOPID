@@ -35,8 +35,8 @@ hf = figure('Units','normalized','Position',[0.05 0.06 0.90 0.78],'Color','w','V
 tiledlayout(3,1,'Padding','compact','TileSpacing','compact');
 
 nexttile;
-plot(t, r.y_true, 'k-', 'LineWidth', 1.4); hold on;
-plot(t, y_meas, 'r-', 'LineWidth', 1.0);
+plot(t, r.y_true, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.5); hold on;
+plot(t, y_meas, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
 yline(1.0, 'k:');
 shade_attack_window(gca, attack_start, t(end), [0.65 0.80 1.0], 0.18);
 if ~isnan(attack_start), xline(attack_start, 'b-.', 'Attack start'); end
@@ -46,7 +46,7 @@ title(sprintf('Phase 3 output and injection: %s', r.attack_type));
 xlabel('Time (s)'); ylabel('V_t (pu)'); grid on;
 
 nexttile;
-plot(t, residuals, 'b-', 'LineWidth', 1.0); hold on; yline(0,'k:');
+plot(t, residuals, 'Color', [0.4940 0.1840 0.5560], 'LineWidth', 1.1); hold on; yline(0,'k:');
 shade_attack_window(gca, attack_start, t(end), [0.65 0.80 1.0], 0.18);
 if ~isnan(attack_start), xline(attack_start, 'b-.', 'Attack start'); end
 if ~isnan(dt), xline(dt,'m--','Detection'); end
@@ -54,7 +54,7 @@ title(sprintf('Residual | rms=%.4g | peak=%.4g', residual_rms, residual_peak)); 
 
 nexttile;
 Jk = abs(residuals) + movmean(abs(residuals), max(5, round(0.05 / max(t(2)-t(1), eps))));
-plot(t, Jk, 'g-', 'LineWidth', 1.0); hold on;
+plot(t, Jk, 'Color', [0.4660 0.6740 0.1880], 'LineWidth', 1.1); hold on;
 shade_attack_window(gca, attack_start, t(end), [0.65 0.80 1.0], 0.18);
 if ~isnan(attack_start), xline(attack_start, 'b-.', 'Attack start'); end
 if ~isnan(dt), xline(dt,'m--','Detection'); end
@@ -66,8 +66,7 @@ if nargin >= 2 && ~isempty(outname)
     % ensure results dir
     outdir = fileparts(outname);
     if ~isempty(outdir) && ~exist(outdir,'dir'), mkdir(outdir); end
-    drawnow;
-    saveas(hf, outname);
+    save_clean_plot(hf, outname);
 end
 end
 

@@ -278,12 +278,12 @@ csvpath = fullfile(phase_artifacts('phase5').csv, 'phase5_comparison.csv');
     T = readtable(csvpath);
     outfig = fullfile(outRoot,'phase5_ITAE.png');
     try
-        hf = figure('Visible','off');
+        hf = figure('Visible','off','Color','w');
         bar([T.itae_2dof, T.itae_pid, T.itae_res]);
         set(gca,'XTickLabel', cellstr(string(T.scenario_name)));
         legend('2DoF','PID','Resilient','Location','northwest');
         title('Phase5 ITAE Comparison'); ylabel('ITAE'); grid on;
-        exportgraphics(hf, outfig, 'Resolution', 150);
+        save_clean_plot(hf, outfig, 200);
         close(hf);
         fprintf('Saved Phase5 ITAE plot to %s\n', outfig);
         % If Phase5 shows 2DoF catastrophically worse than PID in any scenario,

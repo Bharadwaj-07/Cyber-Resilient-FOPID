@@ -164,7 +164,7 @@ semilogy(pso_history, 'LineWidth', 1.5);
 grid on;
 xlabel('Iteration'); ylabel('Best ITAE (log scale)');
 title('PSO convergence — 2DoF FOPID tuning');
-saveas(hf, fullfile(paths.plots, 'phase2_pso_convergence.png'));
+save_clean_plot(hf, fullfile(paths.plots, 'phase2_pso_convergence.png'));
 close(hf);
 
 phase2_table = table(...

@@ -38,7 +38,7 @@ writetable(summary, fullfile(paths.csv, 'avr_baseline_summary.csv'));
 
 % --- Annotated step plot ---
 hf = figure('Name','Baseline Step Response','Visible','off','Color','w');
-plot(t_out, y, 'LineWidth', 1.5); hold on;
+plot(t_out, y, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.6); hold on;
 yline(1.0, '--k', 'Setpoint', 'LabelHorizontalAlignment','left');
 yline(1 + info.Overshoot/100, ':r', ...
     sprintf('Peak +%.1f%%', info.Overshoot), ...
@@ -48,5 +48,5 @@ xline(info.SettlingTime, ':b', ...
 grid on; hold off;
 title('AVR plant — uncontrolled step response');
 ylabel('Vt (pu)'); xlabel('Time (s)');
-saveas(hf, fullfile(paths.plots, 'avr_baseline_step.png'));
+save_clean_plot(hf, fullfile(paths.plots, 'avr_baseline_step.png'));
 close(hf);

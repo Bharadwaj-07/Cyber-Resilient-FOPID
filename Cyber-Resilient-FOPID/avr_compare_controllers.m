@@ -52,9 +52,9 @@ ITAE_2dof = itae(y_2dof, t3);
 
 % --- Comparison plot ---
 hf = figure('Name','Controller Comparison','Position',[100 100 800 450],'Visible','off','Color','w');
-plot(t1, y_pid,  'r-',  'LineWidth', 1.5); hold on;
-plot(t2, y_1dof, 'b--', 'LineWidth', 1.5);
-plot(t3, y_2dof, 'g-',  'LineWidth', 2.0);
+plot(t1, y_pid,  'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.7); hold on;
+plot(t2, y_1dof, 'Color', [0.8500 0.3250 0.0980], 'LineStyle', '--', 'LineWidth', 1.7);
+plot(t3, y_2dof, 'Color', [0.4660 0.6740 0.1880], 'LineWidth', 2.0);
 yline(1.0, 'k:', 'Setpoint');
 grid on; hold off;
 legend('Classical PID', '1DoF FOPID', '2DoF FOPID (tuned)', ...
@@ -62,7 +62,7 @@ legend('Classical PID', '1DoF FOPID', '2DoF FOPID (tuned)', ...
 xlabel('Time (s)'); ylabel('Terminal voltage Vt (pu)');
 title('AVR step response — controller comparison');
 ylim([0 1.8]);
-saveas(hf, fullfile(paths.plots, 'phase2_controller_comparison.png'));
+save_clean_plot(hf, fullfile(paths.plots, 'phase2_controller_comparison.png'));
 close(hf);
 
 % --- Metrics table ---

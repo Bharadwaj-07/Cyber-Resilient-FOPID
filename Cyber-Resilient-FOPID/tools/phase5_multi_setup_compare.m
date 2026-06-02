@@ -110,7 +110,10 @@ function create_multi_plots(results_table, t)
             y_pid = zeros(size(t)); y_1d = zeros(size(t)); y_2d = zeros(size(t)); y_res = zeros(size(t));
         end
         hf = figure('Visible','off','Color','w');
-        plot(t, y_1d, 'c', t, y_2d, 'b', t, y_pid, 'g', t, y_res, 'r');
+        plot(t, y_1d, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.1); hold on;
+        plot(t, y_2d, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
+        plot(t, y_pid, 'Color', [0.4660 0.6740 0.1880], 'LineWidth', 1.1);
+        plot(t, y_res, 'Color', [0.4940 0.1840 0.5560], 'LineWidth', 1.1);
         legend('1DoF','2DoF','PID','Resilient'); title(['Multi-setup - ' sc]); grid on;
         plotfile = fullfile(plotdir, [sc '_multi_compare.png']); save_plot(hf, plotfile); close(hf);
         try copyfile(plotfile, fullfile(results_plot_dir, [sc '_multi_compare.png'])); catch, end
@@ -118,9 +121,5 @@ function create_multi_plots(results_table, t)
 end
 
 function save_plot(hf, filePath)
-    try
-        exportgraphics(hf, filePath, 'Resolution', 150);
-    catch
-        saveas(hf, filePath);
-    end
+    save_clean_plot(hf, filePath, 200);
 end

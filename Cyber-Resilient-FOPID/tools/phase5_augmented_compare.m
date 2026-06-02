@@ -75,48 +75,48 @@ for is = 1:numel(scenarios)
     tiledlayout(3,2,'Padding','compact','TileSpacing','compact');
 
     nexttile;
-    plot(t, y_pid, 'b-', 'LineWidth', 1.1); hold on;
-    plot(t, y_res_pid, 'r-', 'LineWidth', 1.1);
+    plot(t, y_pid, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.2); hold on;
+    plot(t, y_res_pid, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.2);
     grid on; title('PID: baseline vs augmented'); ylabel('y');
     legend('baseline PID','augmented PID','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
     xline(attack_cfg.start_time,'m-.','Attack start');
 
     nexttile;
-    plot(t, abs(r - y_pid), 'b--', 'LineWidth', 1.0); hold on;
-    plot(t, abs(r - y_res_pid), 'r-', 'LineWidth', 1.0);
+    plot(t, abs(r - y_pid), '--', 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.0); hold on;
+    plot(t, abs(r - y_res_pid), 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
     grid on; title('PID tracking error'); ylabel('|e|');
     legend('baseline PID','augmented PID','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
     xline(attack_cfg.start_time,'m-.','Attack start');
 
     nexttile;
-    plot(t, y_1dof, 'b-', 'LineWidth', 1.1); hold on;
-    plot(t, y_res_1d, 'r-', 'LineWidth', 1.1);
+    plot(t, y_1dof, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.2); hold on;
+    plot(t, y_res_1d, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.2);
     grid on; title('1DoF: baseline vs augmented'); ylabel('y');
     legend('baseline 1DoF','augmented 1DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
     xline(attack_cfg.start_time,'m-.','Attack start');
 
     nexttile;
-    plot(t, abs(r - y_1dof), 'b--', 'LineWidth', 1.0); hold on;
-    plot(t, abs(r - y_res_1d), 'r-', 'LineWidth', 1.0);
+    plot(t, abs(r - y_1dof), '--', 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.0); hold on;
+    plot(t, abs(r - y_res_1d), 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
     grid on; title('1DoF tracking error'); ylabel('|e|');
     legend('baseline 1DoF','augmented 1DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
     xline(attack_cfg.start_time,'m-.','Attack start');
 
     nexttile;
-    plot(t, y_2dof, 'b-', 'LineWidth', 1.1); hold on;
-    plot(t, y_res_2d, 'r-', 'LineWidth', 1.1);
+    plot(t, y_2dof, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.2); hold on;
+    plot(t, y_res_2d, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.2);
     grid on; title('2DoF: baseline vs augmented'); xlabel('Time (s)'); ylabel('y');
     legend('baseline 2DoF','augmented 2DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
     xline(attack_cfg.start_time,'m-.','Attack start');
 
     nexttile;
-    plot(t, abs(r - y_2dof), 'b--', 'LineWidth', 1.0); hold on;
-    plot(t, abs(r - y_res_2d), 'r-', 'LineWidth', 1.0);
+    plot(t, abs(r - y_2dof), '--', 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.0); hold on;
+    plot(t, abs(r - y_res_2d), 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
     grid on; title('2DoF tracking error'); xlabel('Time (s)'); ylabel('|e|');
     legend('baseline 2DoF','augmented 2DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
@@ -124,7 +124,7 @@ for is = 1:numel(scenarios)
 
     sgtitle(sprintf('Augmented comparison - %s', sc.name), 'Interpreter', 'none');
     plotfile = fullfile(plotdir, sprintf('%s_augmented_compare.png', sc.name));
-    save_plot(hf, plotfile);
+    save_clean_plot(hf, plotfile, 200);
     % Also copy to top-level results folder for easy aggregation
     results_plot_dir = fullfile('results','phase5','plots','augmented');
     if ~exist(results_plot_dir,'dir'), mkdir(results_plot_dir,'recursive'); end
@@ -140,7 +140,7 @@ for is = 1:numel(scenarios)
     legend('baseline','augmented','Location','northwest');
     title(sprintf('ITAE summary - %s', sc.name), 'Interpreter', 'none');
     plotfile2 = fullfile(plotdir, sprintf('%s_augmented_itae.png', sc.name));
-    save_plot(hf2, plotfile2);
+    save_clean_plot(hf2, plotfile2, 200);
     try copyfile(plotfile2, fullfile(results_plot_dir, sprintf('%s_augmented_itae.png', sc.name))); catch, end
     close(hf2);
 
@@ -209,10 +209,3 @@ function shade_attack_window(ax, attack_start, attack_end, faceColor, faceAlpha)
     uistack(hBand, 'bottom');
 end
 
-function save_plot(hf, filePath)
-    try
-        exportgraphics(hf, filePath, 'Resolution', 150);
-    catch
-        saveas(hf, filePath);
-    end
-end
