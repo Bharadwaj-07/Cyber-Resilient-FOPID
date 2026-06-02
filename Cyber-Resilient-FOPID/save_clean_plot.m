@@ -39,7 +39,8 @@ try
     oldUnits = get(hf, 'Units');
     set(hf, 'Units', 'pixels');
     pos = get(hf, 'Position');
-    minW = 1000; minH = 650;
+    % increase minimum exported figure size for better readability
+    minW = 1400; minH = 900;
     if pos(3) < minW || pos(4) < minH
         set(hf, 'Position', [pos(1) pos(2) max(pos(3), minW) max(pos(4), minH)]);
     end
@@ -63,10 +64,17 @@ try
             % tighten position based on TightInset
             pos = get(ax, 'Position');
             ti = get(ax, 'TightInset');
+            % compute a slightly looser tight position to preserve breathing room
             left = pos(1) + ti(1);
             bottom = pos(2) + ti(2);
             width = pos(3) - (ti(1) + ti(3));
             height = pos(4) - (ti(2) + ti(4));
+            % expand a bit to avoid clipping close to axis lines
+            margin = 0.02; % normalized units
+            left = max(0, left - margin);
+            bottom = max(0, bottom - margin);
+            width = min(1 - left, width + 2 * margin);
+            height = min(1 - bottom, height + 2 * margin);
             if width > 0 && height > 0
                 set(ax, 'Position', [left bottom max(width, 0.05) max(height, 0.05)]);
             end

@@ -101,9 +101,9 @@ function add_event_label(ax, xval, lab, side)
     try
         axes(ax); %#ok<LAXES>
         xl = xlim(ax); yl = ylim(ax);
-        dx = (xl(2)-xl(1)) * 0.008;
-        % y position slightly below top
-        y = yl(2) - 0.04 * (yl(2)-yl(1));
+        dx = (xl(2)-xl(1)) * 0.02; % larger horizontal offset to avoid touching lines
+        % y position slightly below top with more breathing room
+        y = yl(2) - 0.08 * (yl(2)-yl(1));
         if strcmpi(side,'left')
             x = xval - dx;
             hal = 'right';
@@ -114,8 +114,8 @@ function add_event_label(ax, xval, lab, side)
         % ensure x within axis limits
         x = min(max(x, xl(1) + 0.005*(xl(2)-xl(1)), xl(1)), xl(2));
         t = text(ax, x, y, lab, 'HorizontalAlignment', hal, 'VerticalAlignment', 'top', ...
-            'FontSize', 10, 'FontWeight', 'normal', 'Color', [0 0 0], 'Interpreter', 'none');
-        set(t, 'BackgroundColor', [1 1 1], 'EdgeColor', 0.85*[1 1 1]);
+            'FontSize', 11, 'FontWeight', 'normal', 'Color', [0 0 0], 'Interpreter', 'none');
+        set(t, 'BackgroundColor', [1 1 1], 'EdgeColor', 0.85*[1 1 1], 'Margin', 2);
     catch
     end
 end
