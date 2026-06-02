@@ -39,12 +39,13 @@ writetable(summary, fullfile(paths.csv, 'avr_baseline_summary.csv'));
 % --- Annotated step plot ---
 hf = figure('Name','Baseline Step Response','Visible','off','Color','w');
 plot(t_out, y, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.6); hold on;
-yline(1.0, '--k', 'Setpoint', 'LabelHorizontalAlignment','left');
-yline(1 + info.Overshoot/100, ':r', ...
-    sprintf('Peak +%.1f%%', info.Overshoot), ...
-    'LabelHorizontalAlignment','left');
-xline(info.SettlingTime, ':b', ...
-    sprintf('Ts = %.2fs', info.SettlingTime));
+hsp = yline(1.0, '--k');
+try set(hsp, 'DisplayName', 'Setpoint'); catch; end
+hpeak = yline(1 + info.Overshoot/100, ':r');
+try set(hpeak, 'DisplayName', sprintf('Peak +%.1f%%', info.Overshoot)); catch; end
+% mark settling time with hidden xline and boxed label
+xline(info.SettlingTime, ':b', 'HandleVisibility', 'off');
+add_event_label(gca, info.SettlingTime, sprintf('Ts = %.2fs', info.SettlingTime), 'right');
 grid on; hold off;
 title('AVR plant — uncontrolled step response');
 ylabel('Vt (pu)'); xlabel('Time (s)');

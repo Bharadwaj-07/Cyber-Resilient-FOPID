@@ -99,7 +99,7 @@ try
     for t = tx(:)'
         try
             if ~isequal(t, get(ax, 'Title')) && ~isequal(t, get(ax, 'XLabel')) && ~isequal(t, get(ax, 'YLabel'))
-                set(t, 'FontSize', 10, 'Interpreter', 'none');
+                set(t, 'FontSize', 10, 'Interpreter', 'none', 'Color', [0 0 0]);
             end
         catch
         end
