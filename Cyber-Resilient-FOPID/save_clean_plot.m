@@ -5,7 +5,7 @@ if nargin < 1 || isempty(hf) || ~isgraphics(hf, 'figure')
     hf = gcf;
 end
 if nargin < 3 || isempty(resolution)
-    resolution = 200;
+    resolution = 300; % higher default for clearer saved figures
 end
 
 set(hf, 'Color', 'w');
@@ -15,9 +15,32 @@ for k = 1:numel(axesHandles)
 end
 
 drawnow;
+% Try to move legends outside the axes to avoid overlap
 try
-    exportgraphics(hf, filePath, 'Resolution', resolution);
+    legs = findall(hf, 'Type', 'Legend');
+    for k = 1:numel(legs)
+        try
+            set(legs(k), 'Interpreter', 'none');
+            set(legs(k), 'Box', 'on', 'Color', 'w', 'EdgeColor', 0.85*[1 1 1]);
+            set(legs(k), 'Location', 'bestoutside');
+        catch
+            try
+                set(legs(k), 'Location', 'best');
+            catch
+            end
+        end
+    end
 catch
-    saveas(hf, filePath);
+end
+
+% Attempt export with white background and requested resolution
+try
+    exportgraphics(hf, filePath, 'Resolution', resolution, 'BackgroundColor', 'white');
+catch
+    try
+        exportgraphics(hf, filePath, 'Resolution', resolution);
+    catch
+        saveas(hf, filePath);
+    end
 end
 end

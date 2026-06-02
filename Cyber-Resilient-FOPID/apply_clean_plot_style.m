@@ -14,15 +14,17 @@ set(ax, ...
     'Color', 'w', ...
     'Box', 'on', ...
     'Layer', 'top', ...
-    'LineWidth', 1, ...
+    'LineWidth', 1.5, ...
     'FontName', 'Arial', ...
-    'FontSize', 11, ...
-    'GridAlpha', 0.18, ...
-    'MinorGridAlpha', 0.10, ...
+    'FontSize', 12, ...
+    'GridAlpha', 0.22, ...
+    'MinorGridAlpha', 0.12, ...
     'XGrid', 'on', ...
     'YGrid', 'on', ...
     'XMinorGrid', 'on', ...
-    'YMinorGrid', 'on');
+    'YMinorGrid', 'on', ...
+    'TickDir', 'out', ...
+    'TickLength', [0.02 0.02]);
 
 try
     colororder(ax, [
@@ -39,9 +41,41 @@ if ~isempty(fig) && isgraphics(fig, 'figure')
     leg = findall(fig, 'Type', 'Legend');
     for k = 1:numel(leg)
         try
-            set(leg(k), 'FontName', 'Arial', 'FontSize', 10, 'Box', 'off');
+            % Prefer boxed legend with white background and subtle edge
+            set(leg(k), 'FontName', 'Arial', 'FontSize', 11, ...
+                'Box', 'on', 'Color', 'w', 'EdgeColor', 0.85 * [1 1 1], 'Interpreter', 'none');
+            % Place legend outside if possible to avoid covering data
+            try
+                set(leg(k), 'Location', 'bestoutside', 'Orientation', 'vertical');
+            catch
+                set(leg(k), 'Location', 'best');
+            end
         catch
         end
     end
+end
+
+% Improve line visuals (wider strokes, sensible marker sizes)
+try
+    lines = findall(ax, 'Type', 'line');
+    if ~isempty(lines)
+        set(lines, 'LineWidth', 1.6);
+        try
+            set(lines, 'MarkerSize', 6);
+        catch
+        end
+    end
+catch
+end
+
+% Ensure axis labels and title use plain interpreter to avoid LaTeX surprises
+try
+    th = get(ax, 'Title');
+    set(th, 'Interpreter', 'none');
+    xl = get(ax, 'XLabel');
+    yl = get(ax, 'YLabel');
+    set(xl, 'Interpreter', 'none');
+    set(yl, 'Interpreter', 'none');
+catch
 end
 end
