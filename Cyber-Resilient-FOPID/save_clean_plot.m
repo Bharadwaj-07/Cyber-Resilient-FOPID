@@ -26,6 +26,10 @@ try
                 set(legs(k), 'TextColor', [0 0 0]);
             catch
             end
+            try
+                set(legs(k), 'Interpreter', 'tex');
+            catch
+            end
             set(legs(k), 'Location', 'bestoutside');
         catch
             try
@@ -44,7 +48,7 @@ try
     set(hf, 'Units', 'pixels');
     pos = get(hf, 'Position');
     % increase minimum exported figure size for better readability
-    minW = 1400; minH = 900;
+    minW = 1500; minH = 1200;
     if pos(3) < minW || pos(4) < minH
         set(hf, 'Position', [pos(1) pos(2) max(pos(3), minW) max(pos(4), minH)]);
     end
