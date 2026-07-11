@@ -54,6 +54,8 @@ end
 G_amp = tf(Ka,[Ta 1]); G_exc = tf(Ke,[Te 1]); G_gen = tf(Kg,[Tg 1]); G_sen = tf(Ks,[Ts 1]);
 G_fwd = minreal(G_amp * G_exc * G_gen);
 pal = phase_plot_palette();
+plant_ss = ss(G_fwd);
+sensor_ss = ss(G_sen);
 augplotdir = fullfile(paths5.plots, 'augmented');
 if ~exist(augplotdir,'dir'), mkdir(augplotdir); end
 results_aug_plot_dir = fullfile('results','phase5','plots','augmented');
@@ -102,21 +104,21 @@ residual_sigma_floor = 1e-3; % avoids inflated peak/sigma when baseline residual
 % integration. This avoids the runaway values that can appear from fragile
 % transfer-function closed-loop constructions.
 try
-    y_2dof = simulate_closedloop_2dof_euler(ss(G_fwd), C_2dof_r, C_2dof_y, t, r);
+    y_2dof = simulate_closedloop_2dof_euler(plant_ss, C_2dof_r, C_2dof_y, t, r);
 catch ME
     warning('Failed simulating 2DoF closed-loop with Euler model; returning zeros: %s', ME.message);
     y_2dof = zeros(size(t));
 end
 
 try
-    y_1dof = simulate_closedloop_2dof_euler(ss(G_fwd), C_r_1dof, C_y_1dof, t, r);
+    y_1dof = simulate_closedloop_2dof_euler(plant_ss, C_r_1dof, C_y_1dof, t, r);
 catch ME
     warning('Failed simulating 1DoF closed-loop with Euler model; returning zeros: %s', ME.message);
     y_1dof = zeros(size(t));
 end
 
 try
-    y_pid = simulate_closedloop_pid_euler(ss(G_fwd), C_pid, t, r);
+    y_pid = simulate_closedloop_pid_euler(plant_ss, C_pid, t, r);
 catch ME
     warning('Failed simulating PID closed-loop with Euler model; returning zeros: %s', ME.message);
     y_pid = zeros(size(t));
@@ -202,20 +204,20 @@ for i = 1:length(scenarios)
     attack_cfg.start_time = sc.start_time;
 
     try
-        [y_2dof_sc, y_meas] = simulate_closedloop_2dof_euler_attacked(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, t, r, attack_cfg);
+        [y_2dof_sc, y_meas] = simulate_closedloop_2dof_euler_attacked(plant_ss, sensor_ss, C_2dof_r, C_2dof_y, t, r, attack_cfg);
     catch ME
         fprintf(lf, '2DoF attacked sim ERROR: %s\n', ME.message);
         y_2dof_sc = y_2dof_nominal;
         y_meas = avr_attack_injector(y_2dof_sc, t, attack_cfg);
     end
     try
-        y_1dof_sc = simulate_closedloop_2dof_euler_attacked(ss(G_fwd), ss(G_sen), C_r_1dof, C_y_1dof, t, r, attack_cfg);
+        y_1dof_sc = simulate_closedloop_2dof_euler_attacked(plant_ss, sensor_ss, C_r_1dof, C_y_1dof, t, r, attack_cfg);
     catch ME
         fprintf(lf, '1DoF attacked sim ERROR: %s\n', ME.message);
         y_1dof_sc = y_1dof_nominal;
     end
     try
-        y_pid_sc = simulate_closedloop_pid_euler_attacked(ss(G_fwd), ss(G_sen), C_pid, t, r, attack_cfg);
+        y_pid_sc = simulate_closedloop_pid_euler_attacked(plant_ss, sensor_ss, C_pid, t, r, attack_cfg);
     catch ME
         fprintf(lf, 'PID attacked sim ERROR: %s\n', ME.message);
         y_pid_sc = y_pid_nominal;
@@ -260,7 +262,7 @@ for i = 1:length(scenarios)
     switcher_cfg_2dof.detector_attack_time = detection_time;
     try
         [u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler( ...
-            ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg_2dof);
+            plant_ss, sensor_ss, C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg_2dof);
         fprintf(lf, 'Resilient sim: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
     catch ME
         fprintf(lf, 'Resilient sim ERROR: %s\n', ME.message);

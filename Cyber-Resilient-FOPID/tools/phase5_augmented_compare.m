@@ -12,6 +12,8 @@ data = struct(); if exist(phase2mat,'file'), data = load(phase2mat); end
 G_amp = tf(Ka,[Ta 1]); G_exc = tf(Ke,[Te 1]); G_gen = tf(Kg,[Tg 1]); G_sen = tf(Ks,[Ts 1]);
 G_fwd = minreal(G_amp * G_exc * G_gen);
 pal = phase_plot_palette();
+plant_ss = ss(G_fwd);
+sensor_ss = ss(G_sen);
 
 % Controllers: fallbacks where missing
 if isfield(data,'C_y'), C_2dof_y = data.C_y; end
@@ -46,30 +48,30 @@ for is = 1:numel(scenarios)
     if isfield(sc,'frequency'), attack_cfg.frequency = sc.frequency; end
 
     % Baseline PID
-    y_pid = simulate_closedloop_pid_euler_attacked(ss(G_fwd), ss(G_sen), C_pid, t, r, attack_cfg);
+    y_pid = simulate_closedloop_pid_euler_attacked(plant_ss, sensor_ss, C_pid, t, r, attack_cfg);
     y_pid = sanitize_signal(y_pid); itae_pid = safe_itae(y_pid,t,1e6);
 
     % Augmented PID: use the same controller in both reference and feedback
     % paths so the resilient wrapper preserves the nominal PID behavior.
-    [u_res_pid,~,switch_times_pid,y_res_pid,diag_pid] = simulate_resilient_closedloop_euler(ss(G_fwd), ss(G_sen), C_pid, C_pid, C_pid, t, r, attack_cfg, 1, 5, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
+    [u_res_pid,~,switch_times_pid,y_res_pid,diag_pid] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_pid, C_pid, C_pid, t, r, attack_cfg, 1, 5, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
     y_res_pid = sanitize_signal(y_res_pid); itae_res_pid = safe_itae(y_res_pid,t,1e6);
 
     % Baseline 1DoF (feedback-only)
-    y_1dof = simulate_closedloop_pid_euler_attacked(ss(G_fwd), ss(G_sen), C_1dof, t, r, attack_cfg);
+    y_1dof = simulate_closedloop_pid_euler_attacked(plant_ss, sensor_ss, C_1dof, t, r, attack_cfg);
     y_1dof = sanitize_signal(y_1dof); itae_1dof = safe_itae(y_1dof,t,1e6);
 
     % Augmented 1DoF: duplicate the controller into both 2DoF paths so the
     % resilient pipeline sees the same closed-loop shape as the baseline.
-    [u_res_1d,~,switch_times_1d,y_res_1d,diag_1d] = simulate_resilient_closedloop_euler(ss(G_fwd), ss(G_sen), C_1dof, C_1dof, C_1dof, t, r, attack_cfg, 1, 5, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
+    [u_res_1d,~,switch_times_1d,y_res_1d,diag_1d] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_1dof, C_1dof, C_1dof, t, r, attack_cfg, 1, 5, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
     y_res_1d = sanitize_signal(y_res_1d); itae_res_1d = safe_itae(y_res_1d,t,1e6);
 
     % Baseline 2DoF
-    [y_2dof,~] = simulate_closedloop_2dof_euler_attacked(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, t, r, attack_cfg);
+    [y_2dof,~] = simulate_closedloop_2dof_euler_attacked(plant_ss, sensor_ss, C_2dof_r, C_2dof_y, t, r, attack_cfg);
     y_2dof = sanitize_signal(y_2dof); itae_2dof = safe_itae(y_2dof,t,1e6);
 
     % Augmented 2DoF: keep the same recovery profile as the PID and 1DoF branches.
     cfg_2d = struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]);
-    [u_res_2d,~,switch_times_2d,y_res_2d,diag_2d] = simulate_resilient_closedloop_euler(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, 1, 5, cfg_2d);
+    [u_res_2d,~,switch_times_2d,y_res_2d,diag_2d] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, 1, 5, cfg_2d);
     y_res_2d = sanitize_signal(y_res_2d); itae_res_2d = safe_itae(y_res_2d,t,1e6);
 
     % Save a per-scenario plot comparing baseline vs augmented responses.

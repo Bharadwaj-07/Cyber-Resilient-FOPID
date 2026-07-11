@@ -18,6 +18,8 @@ if isfield(data,'C_pid'), C_pid = data.C_pid; end
 G_amp = tf(Ka,[Ta 1]); G_exc = tf(Ke,[Te 1]); G_gen = tf(Kg,[Tg 1]); G_sen = tf(Ks,[Ts 1]);
 G_fwd = minreal(G_amp * G_exc * G_gen);
 pal = phase_plot_palette();
+plant_ss = ss(G_fwd);
+sensor_ss = ss(G_sen);
 if ~exist('C_2dof_y','var') || isempty(C_2dof_y)
     try C_2dof_y = pidtune(G_fwd * G_sen, 'PID'); C_2dof_r = C_2dof_y; catch, C_2dof_y = pid(1,1,0.1); C_2dof_r = C_2dof_y; end
 end
@@ -47,23 +49,23 @@ for is = 1:numel(scenarios)
     if isfield(sc,'frequency'), attack_cfg.frequency = sc.frequency; end
 
     % PID (single-loop)
-    y_pid = simulate_closedloop_pid_euler_attacked(ss(G_fwd), ss(G_sen), C_pid, t, r, attack_cfg);
+    y_pid = simulate_closedloop_pid_euler_attacked(plant_ss, sensor_ss, C_pid, t, r, attack_cfg);
     y_pid = sanitize_signal(y_pid);
     itae_pid = safe_itae(y_pid, t, 1e6);
 
     % 1DoF (feedback-only) - use C_1dof
-    y_1dof = simulate_closedloop_pid_euler_attacked(ss(G_fwd), ss(G_sen), C_1dof, t, r, attack_cfg);
+    y_1dof = simulate_closedloop_pid_euler_attacked(plant_ss, sensor_ss, C_1dof, t, r, attack_cfg);
     y_1dof = sanitize_signal(y_1dof);
     itae_1dof = safe_itae(y_1dof, t, 1e6);
 
     % 2DoF
-    [y_2dof, y_meas_hist] = simulate_closedloop_2dof_euler_attacked(ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, t, r, attack_cfg);
+    [y_2dof, y_meas_hist] = simulate_closedloop_2dof_euler_attacked(plant_ss, sensor_ss, C_2dof_r, C_2dof_y, t, r, attack_cfg);
     y_2dof = sanitize_signal(y_2dof);
     itae_2dof = safe_itae(y_2dof, t, 1e6);
 
     % Resilient: detect from 2DoF baseline then run resilient sim
     [attack_flag, ~, detection_time, ~] = direct_baseline_detector(y_2dof, y_2dof, t, struct('baseline_window',5,'window_size',50,'threshold_factor',3,'min_consecutive',3,'startup_suppress',4.8));
-    [u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler( ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
+    [u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler( plant_ss, sensor_ss, C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
     y_res = sanitize_signal(y_res);
     itae_res = safe_itae(y_res, t, 1e6);
 
