@@ -54,6 +54,10 @@ end
 G_amp = tf(Ka,[Ta 1]); G_exc = tf(Ke,[Te 1]); G_gen = tf(Kg,[Tg 1]); G_sen = tf(Ks,[Ts 1]);
 G_fwd = minreal(G_amp * G_exc * G_gen);
 pal = phase_plot_palette();
+augplotdir = fullfile(paths5.plots, 'augmented');
+if ~exist(augplotdir,'dir'), mkdir(augplotdir); end
+results_aug_plot_dir = fullfile('results','phase5','plots','augmented');
+if ~exist(results_aug_plot_dir,'dir'), mkdir(results_aug_plot_dir,'recursive'); end
 
 % Ensure we have controllers
 if ~exist('C_2dof_y','var') || isempty(C_2dof_y)
@@ -358,49 +362,80 @@ for i = 1:length(scenarios)
     save(fname, 'sc', 'y_true', 'y_meas', 'residuals', 'attack_flag', 'detection_time', 'detection_delay', 'u_res', 'mode_hist', 'switch_times', 'y_res', 'metrics', 'attack_est_hist', 'y_hat_hist', 'obs_gain_hist', 'y_iso_hist', 'u_comp_hist', 'isolation_conf_hist');
     fprintf(lf, 'Saved results: %s\n', fname);
 
-    % plot - include measured (attacked) signal, control action, and mark attack start
-    hf = figure('Visible','on','Color','w','Position',[100 80 1200 1000]);
-    subplot(4,1,1);
-    plot(t, y_1dof_sc, 'Color', pal.baseline, 'LineWidth', 1.1); hold on;
-    plot(t, y_2dof_sc, 'Color', pal.comparison, 'LineWidth', 1.1);
-    plot(t, y_pid_sc, 'Color', pal.tertiary, 'LineWidth', 1.1);
-    plot(t, y_res, 'Color', pal.resilient, 'LineWidth', 1.2);
-    plot(t, y_meas, 'Color', pal.reference, 'LineStyle', '--', 'LineWidth', 1.0);
-    legend('1DoF','2DoF','PID','Resilient','y_{meas}');
-    title(['Outputs - ' sc.name]); grid on;
-    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
+    % Augmented-style plot layout matching the dedicated augmented compare.
+    hf = figure('Visible','off','Color','w','Position',[120 80 1400 900]);
+    tiledlayout(3,2,'Padding','compact','TileSpacing','compact');
+
+    nexttile;
+    plot(t, y_1dof_sc, 'Color', pal.baseline, 'LineWidth', 1.2); hold on;
+    plot(t, y_res, 'Color', pal.comparison, 'LineWidth', 1.2);
+    grid on; title('1DoF: baseline vs augmented'); ylabel('y');
+    legend('baseline 1DoF','augmented 1DoF','Location','best');
+    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
     if isfield(attack_cfg,'start_time') && ~isempty(attack_cfg.start_time) && isfinite(attack_cfg.start_time)
-        xline(attack_cfg.start_time, 'm-.', 'HandleVisibility', 'off');
+        xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
         add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
     end
 
-    subplot(4,1,2);
-    plot(t, u_res, 'Color', pal.baseline, 'LineWidth', 1.1); hold on; xlabel('Time (s)'); ylabel('u'); title('Control action (resilient)'); grid on;
-    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
-    if ~isnan(detection_time)
-        xline(detection_time,'r--','HandleVisibility','off');
-        add_event_label(gca, detection_time, 'Detection', 'right');
+    nexttile;
+    plot(t, abs(r - y_1dof_sc), '--', 'Color', pal.baseline, 'LineWidth', 1.0); hold on;
+    plot(t, abs(r - y_res), 'Color', pal.comparison, 'LineWidth', 1.1);
+    grid on; title('1DoF tracking error'); ylabel('|e|');
+    legend('baseline 1DoF','augmented 1DoF','Location','best');
+    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
+    if isfield(attack_cfg,'start_time') && ~isempty(attack_cfg.start_time) && isfinite(attack_cfg.start_time)
+        xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
+        add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
     end
 
-    subplot(4,1,3);
-    plot(t, residuals, 'Color', pal.resilient, 'LineWidth', 1.1); title('Residuals'); grid on;
-    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
-    if ~isnan(detection_time)
-        xline(detection_time,'r--','HandleVisibility','off');
-        add_event_label(gca, detection_time, 'Detection', 'right');
+    nexttile;
+    plot(t, y_2dof_sc, 'Color', pal.baseline, 'LineWidth', 1.2); hold on;
+    plot(t, y_res, 'Color', pal.comparison, 'LineWidth', 1.2);
+    grid on; title('2DoF: baseline vs augmented'); ylabel('y');
+    legend('baseline 2DoF','augmented 2DoF','Location','best');
+    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
+    if isfield(attack_cfg,'start_time') && ~isempty(attack_cfg.start_time) && isfinite(attack_cfg.start_time)
+        xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
+        add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
     end
 
-    subplot(4,1,4);
-    if isempty(mode_hist)
-        stairs(t, ones(size(t)));
-    else
-        stairs(t, mode_hist);
+    nexttile;
+    plot(t, abs(r - y_2dof_sc), '--', 'Color', pal.baseline, 'LineWidth', 1.0); hold on;
+    plot(t, abs(r - y_res), 'Color', pal.comparison, 'LineWidth', 1.1);
+    grid on; title('2DoF tracking error'); ylabel('|e|');
+    legend('baseline 2DoF','augmented 2DoF','Location','best');
+    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
+    if isfield(attack_cfg,'start_time') && ~isempty(attack_cfg.start_time) && isfinite(attack_cfg.start_time)
+        xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
+        add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
     end
-    title('Mode history (resilient)'); ylim([0.5 3.5]); grid on;
-    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
-    drawnow;
-    plotpath = fullfile(plotdir, [sc.name '.png']);
+
+    nexttile;
+    plot(t, y_pid_sc, 'Color', pal.baseline, 'LineWidth', 1.2); hold on;
+    plot(t, y_res, 'Color', pal.comparison, 'LineWidth', 1.2);
+    grid on; title('PID: baseline vs augmented'); xlabel('Time (s)'); ylabel('y');
+    legend('baseline PID','augmented PID','Location','best');
+    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
+    if isfield(attack_cfg,'start_time') && ~isempty(attack_cfg.start_time) && isfinite(attack_cfg.start_time)
+        xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
+        add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
+    end
+
+    nexttile;
+    plot(t, abs(r - y_pid_sc), '--', 'Color', pal.baseline, 'LineWidth', 1.0); hold on;
+    plot(t, abs(r - y_res), 'Color', pal.comparison, 'LineWidth', 1.1);
+    grid on; title('PID tracking error'); xlabel('Time (s)'); ylabel('|e|');
+    legend('baseline PID','augmented PID','Location','best');
+    shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
+    if isfield(attack_cfg,'start_time') && ~isempty(attack_cfg.start_time) && isfinite(attack_cfg.start_time)
+        xline(attack_cfg.start_time,'m-.','HandleVisibility','off');
+        add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
+    end
+
+    sgtitle(sprintf('Augmented comparison - %s', sc.name), 'Interpreter', 'none');
+    plotpath = fullfile(augplotdir, sprintf('%s_augmented_compare.png', sc.name));
     save_clean_plot(hf, plotpath, 200);
+    try copyfile(plotpath, fullfile(results_aug_plot_dir, sprintf('%s_augmented_compare.png', sc.name))); catch, end
     fprintf(lf, 'Saved plot: %s\n', plotpath);
 
     % Collect table row
@@ -473,7 +508,19 @@ anomalyTable = summaryTable(:, [ ...
     'itae_1dof','itae_2dof','itae_pid','itae_res','delta_itae_res_1dof','delta_itae_res_pid','delta_itae_res_2dof', ...
      'mode_transitions','final_mode','first_switch_time','last_switch_time'}]);
 writetable(anomalyTable, anomalyCsvPath);
+
+% Compact augmented-style CSV mirroring the dedicated augmented compare outputs.
+augmentedCsvPath = fullfile(csvdir, 'phase5_augmented_comparison.csv');
+augmentedTable = summaryTable(:, [ ...
+    {'scenario_name','attack_type','attack_magnitude','attack_slope','attack_frequency','attack_start_time', ...
+     'attack_detected','detection_time','detection_delay','confidence', ...
+     'itae_1dof','itae_2dof','itae_pid','itae_res', ...
+     'delta_itae_res_1dof','delta_itae_res_pid','delta_itae_res_2dof', ...
+     'mode_transitions','final_mode','first_switch_time','last_switch_time','u_jump','u_peak_rate'}]);
+augmentedTable = renamevars(augmentedTable, 'scenario_name', 'scenario');
+writetable(augmentedTable, augmentedCsvPath);
 fprintf(lf, 'Saved CSV summaries: %s and %s\n', csvpath, anomalyCsvPath);
+fprintf(lf, 'Saved augmented-style CSV: %s\n', augmentedCsvPath);
 
 % Sanity check the written tables so the log tells us immediately whether
 % the CSVs are complete and numerically usable.

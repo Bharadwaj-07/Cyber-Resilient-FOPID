@@ -229,19 +229,8 @@ try
         else
             fprintf(runfid,'phase5_multi_setup_compare not found - skipping\n');
         end
-        if exist('phase5_augmented_compare','file')
-            try
-                fprintf('Running phase5_augmented_compare...\n'); fprintf(runfid,'Running phase5_augmented_compare...\n');
-                phase5_augmented_compare();
-                fprintf(runfid,'phase5_augmented_compare completed\n');
-                run_summary(end+1,:) = {'phase5_augmented_compare','tools/phase5_augmented_compare','ok'};
-            catch MEnt
-                fprintf(runfid,'phase5_augmented_compare failed: %s\n', MEnt.message);
-                run_summary(end+1,:) = {'phase5_augmented_compare','tools/phase5_augmented_compare','failed'};
-            end
-        else
-            fprintf(runfid,'phase5_augmented_compare not found - skipping\n');
-        end
+        fprintf(runfid,'phase5_augmented_compare skipped: phase5_full_comparison now emits augmented-style outputs\n');
+        run_summary(end+1,:) = {'phase5_augmented_compare','tools/phase5_augmented_compare','skipped'};
     else
         fprintf('phase5_full_comparison not found - skipping\n'); fprintf(runfid,'phase5_full_comparison not found - skipping\n');
         run_summary(end+1,:) = {'phase5_full_comparison','phase5_full_comparison','missing'};

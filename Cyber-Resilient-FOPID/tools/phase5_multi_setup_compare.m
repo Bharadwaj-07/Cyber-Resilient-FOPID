@@ -96,6 +96,7 @@ function create_multi_plots(results_table, t)
     paths5 = phase_artifacts('phase5');
     plotdir = fullfile(paths5.plots,'multi'); if ~exist(plotdir,'dir'), mkdir(plotdir); end
     results_plot_dir = fullfile('results','phase5','plots','multi'); if ~exist(results_plot_dir,'dir'), mkdir(results_plot_dir,'recursive'); end
+    pal = phase_plot_palette();
     for i = 1:height(results_table)
         sc = results_table.scenario{i};
         % Load per-scenario MAT files if available
