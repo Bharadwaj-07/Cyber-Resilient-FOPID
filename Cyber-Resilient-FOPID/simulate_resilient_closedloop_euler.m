@@ -248,14 +248,7 @@ for k = 1:N
             y_ctrl = y_meas;
             mode = 1;
         else
-            % Observer unavailable: fall back to using measured (or corrected) value
-            % to avoid referencing undefined y_hat. This keeps the resilient
-            % pipeline operational even without an observer.
-            if isfield(switcher_cfg,'use_attack_subtraction') && switcher_cfg.use_attack_subtraction
-                y_ctrl = y_meas - attack_est;
-            else
-                y_ctrl = y_meas;
-            end
+            y_ctrl = y_hat;
             mode = 3;
         end
         y_iso = y_ctrl;
@@ -267,31 +260,6 @@ for k = 1:N
         if ~switch_recorded && isfinite(detection_time) && t(k) >= detection_time
             switch_times = [t(k), 1, 3];
             switch_recorded = true;
-            % Bumpless transfer: adjust controller state `xy` so the post-switch
-            % controller output `uy = Cym*xy + Dy*y_ctrl` matches the previous
-            % desired contribution (ur - u_prev) to avoid instantaneous jumps.
-            try
-                ur_now = Crm * xr + Dr * r(k);
-                desired_uy = ur_now - u_prev;
-                if ~isempty(Cym) && ~isempty(xy)
-                    % current uy
-                    cur_uy = Cym * xy + Dy * y_ctrl;
-                    err = (desired_uy - cur_uy);
-                    % distribute correction in least-squares sense across xy
-                    % xy_delta = Cym' * (err / (Cym*Cym' + eps))
-                    denom = (Cym * Cym');
-                    if denom == 0
-                        xy = xy + 0.5 * xy; % fallback: scale integrator
-                    else
-                        xy = xy + (Cym') * (err / (denom + eps));
-                    end
-                elseif ~isempty(xy)
-                    % If Cym empty but states exist, soft-reset as fallback
-                    xy = 0.5 * xy;
-                end
-            catch
-                if ~isempty(xy), xy = 0.5 * xy; end
-            end
         end
     end
 
@@ -341,6 +309,44 @@ diag.u_comp_hist = u_comp_hist;
 diag.isolation_conf_hist = isolation_conf_hist;
 end
 
+function [Aobs, Bobs, Cobs, Dobs, Lobs, ok] = build_recovery_observer(plant_ss, sensor_ss)
+ok = false;
+Aobs = []; Bobs = []; Cobs = []; Dobs = []; Lobs = [];
+try
+    plant_ss = ss(plant_ss);
+    sensor_ss = ss(sensor_ss);
+
+    A = plant_ss.A; B = plant_ss.B; C = plant_ss.C; D = plant_ss.D;
+    As = sensor_ss.A; Bs = sensor_ss.B; Cs = sensor_ss.C; Ds = sensor_ss.D;
+
+    nplant = size(A,1);
+    nsensor = size(As,1);
+    Aobs = [A, zeros(nplant, nsensor); Bs * C, As];
+    Bobs = [B; Bs * D];
+    Cobs = [Ds * C, Cs];
+    Dobs = Ds * D;
+
+    nobs = size(Aobs,1);
+    if nobs == 0
+        return;
+    end
+
+    pole_base = max(4, 2 * nobs);
+    desired_poles = -pole_base - (0:nobs-1);
+    try
+        Lobs = place(Aobs', Cobs', desired_poles)';
+    catch
+        desired_poles = -max(2, nobs) - (0:nobs-1);
+        Lobs = place(Aobs', Cobs', desired_poles)';
+    end
+    if any(~isfinite(Lobs(:)))
+        return;
+    end
+    ok = true;
+catch
+    ok = false;
+    Aobs = []; Bobs = []; Cobs = []; Dobs = []; Lobs = [];
+end
 function y_attack = apply_attack_scalar(y, t, attack_cfg)
 y_attack = y;
 if nargin < 3 || isempty(attack_cfg) || ~isfield(attack_cfg, 'enabled') || ~attack_cfg.enabled
