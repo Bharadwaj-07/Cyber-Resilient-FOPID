@@ -140,49 +140,8 @@ detector_cfg = struct('baseline_window',5,'window_size',50,'threshold_factor',3,
 % to avoid abrupt control jumps during bumpless transfer. Expose a
 % bumpless_reg regularization parameter used when aligning controller state.
 switcher_cfg = struct('hysteresis_time',2,'blend_time',1.5,'recovery_time',2.0,'actuator_limits',[-5 5],'initial_mode',1);
-% Slightly stronger default regularization to avoid large alignment pushes
-switcher_cfg.bumpless_reg = 1e-2;
+switcher_cfg.bumpless_reg = 1e-3;
 switcher_cfg.heuristic_switching_enabled = false;
-
-% Allow user-provided overrides via a small config MAT file created by the
-% grid-search helper (phase5_config.mat). A lockfile (phase5_locked.mat)
-% takes precedence and forces the selected settings to be used.
-lockfile = fullfile(paths5.root, 'phase5_locked.mat');
-cfgfile = fullfile(paths5.root, 'phase5_config.mat');
-if exist(lockfile,'file')
-    try
-        L = load(lockfile);
-        f = fieldnames(L);
-        for ii = 1:numel(f)
-            if isfield(switcher_cfg, f{ii})
-                switcher_cfg.(f{ii}) = L.(f{ii});
-            elseif isfield(detector_cfg, f{ii})
-                detector_cfg.(f{ii}) = L.(f{ii});
-            end
-        end
-        fprintf(lf, 'Loaded locked Phase5 config from %s\n', lockfile);
-    catch MElock
-        fprintf(lf, 'Could not load %s: %s\n', lockfile, MElock.message);
-    end
-elseif exist(cfgfile,'file')
-    try
-        c = load(cfgfile);
-        f = fieldnames(c);
-        for ii = 1:numel(f)
-            if isfield(switcher_cfg, f{ii})
-                switcher_cfg.(f{ii}) = c.(f{ii});
-            else
-                % allow detector_cfg overrides too
-                if isfield(detector_cfg, f{ii})
-                    detector_cfg.(f{ii}) = c.(f{ii});
-                end
-            end
-        end
-        fprintf(lf, 'Loaded Phase5 config overrides from %s\n', cfgfile);
-    catch MEcfg
-        fprintf(lf, 'Could not load %s: %s\n', cfgfile, MEcfg.message);
-    end
-end
 
 % Prepare results table
 rows = {};
@@ -249,13 +208,19 @@ for i = 1:length(scenarios)
     residual_peak_to_sigma = residual_abs_max / residual_baseline_sigma;
     threshold = detector_cfg.threshold_factor * residual_baseline_sigma;
 
-    % Resilient run: use the same recovery profile as the PID and 1DoF branches.
-    switcher_cfg_2dof = switcher_cfg;
-    switcher_cfg_2dof.detector_attack_flag = attack_flag;
-    switcher_cfg_2dof.detector_attack_time = detection_time;
+    % Resilient run: full closed-loop simulation switching from 2DoF to PID
+    % at the detector-reported time.
+    switcher_cfg.detector_attack_flag = attack_flag;
+    switcher_cfg.detector_attack_time = detection_time;
+    % Re-tune fallback PID for this scenario to improve resilient response
     try
-        [u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler( ...
-            ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg_2dof);
+        C_pid_tuned = tune_pid_for_attack(ss(G_fwd), ss(G_sen), t, r, attack_cfg, C_pid);
+    catch
+        C_pid_tuned = C_pid;
+    end
+    try
+        [u_res, mode_hist, switch_times, y_res] = simulate_resilient_closedloop_euler( ...
+            ss(G_fwd), ss(G_sen), C_2dof_r, C_2dof_y, C_pid_tuned, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg);
         fprintf(lf, 'Resilient sim: transitions=%d, final_mode=%d\n', size(switch_times,1), mode_hist(end));
     catch ME
         fprintf(lf, 'Resilient sim ERROR: %s\n', ME.message);
@@ -289,105 +254,35 @@ for i = 1:length(scenarios)
     metrics.delta_ITAE_res_pid = metrics.ITAE_res - metrics.ITAE_pid;
     metrics.delta_ITAE_res_2dof = metrics.ITAE_res - metrics.ITAE_2dof;
 
-    % Diagnostics from resilient sim (observer/recovery)
-    if exist('diag','var') && isfield(diag,'attack_est_hist') && ~isempty(diag.attack_est_hist)
-        row_attack_est_max = safe_scalar(max(abs(diag.attack_est_hist)), 1e6);
-        row_attack_est_end = safe_scalar(diag.attack_est_hist(end), 1e6);
-    else
-        row_attack_est_max = NaN; row_attack_est_end = NaN;
-    end
-    if exist('diag','var') && isfield(diag,'obs_gain_hist') && ~isempty(diag.obs_gain_hist)
-        row_obs_gain_mean = safe_scalar(mean(diag.obs_gain_hist), 1e6);
-    else
-        row_obs_gain_mean = NaN;
-    end
-    if exist('diag','var') && isfield(diag,'y_iso_hist') && ~isempty(diag.y_iso_hist)
-        row_y_iso_end = safe_scalar(diag.y_iso_hist(end), 1e6);
-    else
-        row_y_iso_end = NaN;
-    end
-    if exist('diag','var') && isfield(diag,'u_comp_hist') && ~isempty(diag.u_comp_hist)
-        row_u_comp_peak = safe_scalar(max(abs(diag.u_comp_hist)), 1e6);
-    else
-        row_u_comp_peak = NaN;
-    end
-    if exist('diag','var') && isfield(diag,'isolation_conf_hist') && ~isempty(diag.isolation_conf_hist)
-        row_iso_conf_mean = safe_scalar(mean(diag.isolation_conf_hist), 1e6);
-    else
-        row_iso_conf_mean = NaN;
-    end
-
-    if exist('diag','var') && isfield(diag,'attack_est_hist') && ~isempty(diag.attack_est_hist)
-        attack_est_hist = diag.attack_est_hist;
-    else
-        attack_est_hist = [];
-    end
-    if exist('diag','var') && isfield(diag,'y_hat_hist') && ~isempty(diag.y_hat_hist)
-        y_hat_hist = diag.y_hat_hist;
-    else
-        y_hat_hist = [];
-    end
-    if exist('diag','var') && isfield(diag,'obs_gain_hist') && ~isempty(diag.obs_gain_hist)
-        obs_gain_hist = diag.obs_gain_hist;
-    else
-        obs_gain_hist = [];
-    end
-    if exist('diag','var') && isfield(diag,'y_iso_hist') && ~isempty(diag.y_iso_hist)
-        y_iso_hist = diag.y_iso_hist;
-    else
-        y_iso_hist = [];
-    end
-    if exist('diag','var') && isfield(diag,'u_comp_hist') && ~isempty(diag.u_comp_hist)
-        u_comp_hist = diag.u_comp_hist;
-    else
-        u_comp_hist = [];
-    end
-    if exist('diag','var') && isfield(diag,'isolation_conf_hist') && ~isempty(diag.isolation_conf_hist)
-        isolation_conf_hist = diag.isolation_conf_hist;
-    else
-        isolation_conf_hist = [];
-    end
-
     info2 = safe_stepinfo(y_2dof_sc, t);
     infoP = safe_stepinfo(y_pid_sc, t);
     infoR = safe_stepinfo(y_res, t);
 
     % Save per-scenario MAT and plot in the phase-specific artifact folders
     fname = fullfile(matdir, [sc.name '.mat']);
-    save(fname, 'sc', 'y_true', 'y_meas', 'residuals', 'attack_flag', 'detection_time', 'detection_delay', 'u_res', 'mode_hist', 'switch_times', 'y_res', 'metrics', 'attack_est_hist', 'y_hat_hist', 'obs_gain_hist', 'y_iso_hist', 'u_comp_hist', 'isolation_conf_hist');
+    save(fname, 'sc', 'y_true', 'y_meas', 'residuals', 'attack_flag', 'detection_time', 'detection_delay', 'u_res', 'mode_hist', 'switch_times', 'y_res', 'metrics');
     fprintf(lf, 'Saved results: %s\n', fname);
 
     % plot - include measured (attacked) signal, control action, and mark attack start
     hf = figure('Visible','on','Color','w','Position',[100 80 1200 1000]);
     subplot(4,1,1);
-    plot(t, y_1dof_sc, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.1); hold on;
-    plot(t, y_2dof_sc, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
-    plot(t, y_pid_sc, 'Color', [0.4660 0.6740 0.1880], 'LineWidth', 1.1);
-    plot(t, y_res, 'Color', [0.4940 0.1840 0.5560], 'LineWidth', 1.2);
-    plot(t, y_meas, 'k--', 'LineWidth', 1.0);
+    plot(t, y_1dof_sc, 'c', t, y_2dof_sc, 'b', t, y_pid_sc, 'g', t, y_res, 'r', t, y_meas, 'k--');
     legend('1DoF','2DoF','PID','Resilient','y_{meas}');
     title(['Outputs - ' sc.name]); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
     if isfield(attack_cfg,'start_time') && ~isempty(attack_cfg.start_time) && isfinite(attack_cfg.start_time)
-        xline(attack_cfg.start_time, 'm-.', 'HandleVisibility', 'off');
-        add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
+        xline(attack_cfg.start_time, 'm-.', 'Attack start');
     end
 
     subplot(4,1,2);
-    plot(t, u_res, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.1); hold on; xlabel('Time (s)'); ylabel('u'); title('Control action (resilient)'); grid on;
+    plot(t, u_res, 'k-', 'LineWidth', 1.0); hold on; xlabel('Time (s)'); ylabel('u'); title('Control action (resilient)'); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
-    if ~isnan(detection_time)
-        xline(detection_time,'r--','HandleVisibility','off');
-        add_event_label(gca, detection_time, 'Detection', 'right');
-    end
+    if ~isnan(detection_time), xline(detection_time,'r--','Detection'); end
 
     subplot(4,1,3);
-    plot(t, residuals, 'Color', [0.4940 0.1840 0.5560], 'LineWidth', 1.1); title('Residuals'); grid on;
+    plot(t, residuals); title('Residuals'); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
-    if ~isnan(detection_time)
-        xline(detection_time,'r--','HandleVisibility','off');
-        add_event_label(gca, detection_time, 'Detection', 'right');
-    end
+    if ~isnan(detection_time), xline(detection_time,'r--','Detection'); end
 
     subplot(4,1,4);
     if isempty(mode_hist)
@@ -399,7 +294,11 @@ for i = 1:length(scenarios)
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
     drawnow;
     plotpath = fullfile(plotdir, [sc.name '.png']);
-    save_clean_plot(hf, plotpath, 200);
+    try
+        exportgraphics(hf, plotpath, 'Resolution', 150);
+    catch
+        saveas(hf, plotpath);
+    end
     fprintf(lf, 'Saved plot: %s\n', plotpath);
 
     % Collect table row
@@ -437,12 +336,6 @@ for i = 1:length(scenarios)
     end
     row.u_jump = safe_scalar(u_jump, 1e6);
     row.u_peak_rate = safe_scalar(u_peak_rate, 1e6);
-    row.attack_est_max = row_attack_est_max;
-    row.attack_est_end = row_attack_est_end;
-    row.obs_gain_mean = row_obs_gain_mean;
-    row.y_iso_end = row_y_iso_end;
-    row.u_comp_peak = row_u_comp_peak;
-    row.iso_conf_mean = row_iso_conf_mean;
     rows{end+1} = row;
 end
 
@@ -921,7 +814,7 @@ function ss_sys = safe_controller_ss(C, plant_ss)
     end
 end
 
-function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloop_euler_local(plant_ss, sensor_ss, C_r, C_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg)
+function [u, mode_history, switch_times, y] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_r, C_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg)
     % Self-consistent resilient closed-loop simulation.
     % Mode 1: 2DoF control u = C_r*r - C_y*y_meas
     % Mode 2: PID control on attacked measurement error
@@ -983,36 +876,6 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
     else
         recovery_time = switcher_cfg.recovery_time;
     end
-    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'isolation_tau')
-        isolation_tau = max(0.25, 0.5 * recovery_time);
-    else
-        isolation_tau = max(eps, switcher_cfg.isolation_tau);
-    end
-    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'compensator_gain')
-        compensator_gain = 0.8;
-    else
-        compensator_gain = switcher_cfg.compensator_gain;
-    end
-    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'compensator_tau')
-        compensator_tau = max(0.5, recovery_time);
-    else
-        compensator_tau = max(eps, switcher_cfg.compensator_tau);
-    end
-    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'observer_recovery_time')
-        observer_recovery_time = max(1.0, recovery_time);
-    else
-        observer_recovery_time = max(eps, switcher_cfg.observer_recovery_time);
-    end
-    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'observer_innovation_limit')
-        observer_innovation_limit = 0.05;
-    else
-        observer_innovation_limit = max(eps, switcher_cfg.observer_innovation_limit);
-    end
-    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'observer_min_gain')
-        observer_min_gain = 0.02;
-    else
-        observer_min_gain = min(max(switcher_cfg.observer_min_gain, 0), 1);
-    end
     % actuator limits
     if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'actuator_limits')
         umax = 10; umin = -10;
@@ -1024,33 +887,6 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
             umax = 10; umin = -10;
         end
     end
-    if ~exist('switcher_cfg','var') || isempty(switcher_cfg) || ~isfield(switcher_cfg,'compensator_limit')
-        compensator_limit = max(abs([umin, umax]));
-    else
-        compensator_limit = max(eps, switcher_cfg.compensator_limit);
-    end
-
-    % Attack-aware observer used to reconstruct a clean feedback signal from
-    % the plant and sensor models. Recovery now keeps the nominal 2DoF loop
-    % and feeds it the observer estimate after detection instead of swapping
-    % to a separate PID recovery path.
-    [Aobs, Bobs, Cobs, Dobs, Lobs, observer_ok] = build_recovery_observer(plant_ss, sensor_ss);
-    if observer_ok
-        zhat = zeros(size(Aobs,1),1);
-    else
-        zhat = [];
-    end
-    attack_est = 0;
-    % diagnostics histories for post-mortem analysis
-    attack_est_hist = zeros(N,1);
-    y_hat_hist = zeros(N,1);
-    obs_gain_hist = zeros(N,1);
-    y_iso_hist = zeros(N,1);
-    u_comp_hist = zeros(N,1);
-    isolation_conf_hist = zeros(N,1);
-    switch_recorded = false;
-    recovery_initialized = false;
-
     for k = 1:N
         if k == 1
             dt = t(1);
@@ -1072,98 +908,74 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
         end
         y_meas = apply_attack_scalar(y_s, t(k), attack_cfg);
 
-        % Observer-based recovery: isolate the attack from the measured
-        % signal, then drive a dedicated compensator with the isolated
-        % estimate. This keeps the nominal loop on a cleaned measurement
-        % rather than continuously blending against the attacked output.
-        if observer_ok
-            y_hat = Cobs * zhat + Dobs * u_prev;
-            innovation = y_meas - y_hat;
-            innovation = max(min(innovation, 1e6), -1e6);
-            if isfinite(detection_time) && t(k) >= detection_time
-                % After detection, keep the nominal 2DoF controller and feed
-                % it the observer reconstruction directly. This follows the
-                % attack-reconstruction literature more closely than trying to
-                % switch into a separate recovery controller.
-                iso_gain = min(1, dt / max(eps, isolation_tau));
-                attack_est = (1 - iso_gain) * attack_est + iso_gain * innovation;
-                max_attack_est = max(abs(y_hat) * 2, 10 * observer_innovation_limit);
-                if ~isfinite(max_attack_est) || max_attack_est <= 0
-                    max_attack_est = 1.0;
-                end
-                attack_est = max(min(attack_est, max_attack_est), -max_attack_est);
-                y_iso = y_hat;
-                isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
-                y_ctrl = y_hat;
-                obs_gain = max(observer_min_gain, 1 - max(0, t(k) - detection_time) / observer_recovery_time);
-            else
-                % Before detection, stay measurement-driven so the observer
-                % remains synchronized with the nominal closed loop.
-                attack_est = 0;
-                y_iso = y_meas;
-                y_ctrl = y_meas;
-                isolation_conf = 0;
-                obs_gain = 1;
-            end
-            innovation_gain = min(1, observer_innovation_limit / max(observer_innovation_limit, abs(innovation)));
-            obs_gain = max(observer_min_gain, obs_gain * innovation_gain);
-            zhat = zhat + (Aobs * zhat + Bobs * u_prev + obs_gain * (Lobs * innovation)) * dt;
-            % record diagnostics
-            attack_est_hist(k) = attack_est;
-            y_hat_hist(k) = y_hat;
-            obs_gain_hist(k) = obs_gain;
-            y_iso_hist(k) = y_iso;
-            isolation_conf_hist(k) = isolation_conf;
-            u_comp_hist(k) = 0;
-            if ~switch_recorded && isfinite(detection_time) && t(k) >= detection_time
-                switch_times = [t(k), 1, 3];
-                switch_recorded = true;
-            end
+        % After detection, transition the controller feedback from the attacked
+        % measurement to the internal plant estimate over a short recovery window.
+        % This preserves recovery without the aggressive feedforward that caused
+        % the earlier overshoot/oscillation regression.
+        if k < switch_index || ~isfinite(detection_time)
+            y_ctrl = y_meas;
+        elseif t(k) <= detection_time + recovery_time
+            beta = (t(k) - detection_time) / max(eps, recovery_time);
+            beta = min(max(beta, 0), 1);
+            y_ctrl = (1 - beta) * y_meas + beta * yk;
         else
-            % Fallback if observer design fails: keep a conservative, isolated
-            % estimate using the attacked measurement and plant output.
-            if k < switch_index || ~isfinite(detection_time)
-                y_ctrl = y_meas;
-            elseif t(k) <= detection_time + recovery_time
-                beta = (t(k) - detection_time) / max(eps, recovery_time);
-                beta = min(max(beta, 0), 1);
-                y_ctrl = (1 - beta) * y_meas + beta * yk;
-            else
-                y_ctrl = yk;
-            end
-            y_iso = y_ctrl;
-            isolation_conf = 0;
-            attack_est = y_meas - y_ctrl;
-            u_comp_hist(k) = 0;
-            y_iso_hist(k) = y_iso;
-            isolation_conf_hist(k) = isolation_conf;
-            if ~switch_recorded && isfinite(detection_time) && t(k) >= detection_time
-                switch_times = [t(k), 1, 3];
-                switch_recorded = true;
-            end
+            y_ctrl = yk;
         end
-        if observer_ok
-            if isfinite(detection_time) && t(k) >= detection_time
-                mode = 3;
-            else
-                mode = 1;
-            end
-        else
-            if isfinite(detection_time) && t(k) >= detection_time
-                mode = 3;
-            else
-                mode = 1;
+
+        if k >= switch_index
+            if mode ~= 2
+                switch_times(end+1,:) = [t(k), mode, 2]; %#ok<AGROW>
+                mode = 2;
+                % Bumpless transfer: initialize PID state so the output matches
+                % the control effort already being applied by the 2DoF controller.
+                if nx_pidx > 0
+                    epid_now = r(k) - y_ctrl;
+                    % Use configured regularization for bumpless alignment
+                    if isfield(switcher_cfg,'bumpless_reg')
+                        regval = switcher_cfg.bumpless_reg;
+                    else
+                        regval = [];
+                    end
+                    xpid = align_controller_state(Cpid_ss, epid_now, u_prev, xpid, regval);
+                    % If the aligned PID output differs hugely from current effort,
+                    % dampen integrator states to avoid immediate large jumps.
+                    try
+                        pid_out_now = Cpm * xpid + Dp * epid_now;
+                        if ~isfinite(pid_out_now), pid_out_now = 0; end
+                        if abs(pid_out_now - u_prev) > 0.5 * max(1, abs(u_prev))
+                            xpid = 0.1 * xpid;
+                        end
+                    catch
+                        % ignore and keep aligned state
+                    end
+                end
             end
         end
         mode_history(k) = mode;
 
-        % Keep the nominal 2DoF controller active; recovery only changes the
-        % feedback signal fed into it.
+        % Always update both controller internal states so outputs are ready
+        % for blending and to avoid state freezes when inactive.
         ur = Crm * xr + Dr * r(k);
         uy = Cym * xy + Dy * y_ctrl;
         epid = r(k) - y_ctrl;
+        pid_out = Cpm * xpid + Dp * epid;
 
-        uk_unclamped = ur - uy;
+        % Determine blending alpha (0 = 2DoF only, 1 = PID only)
+        if k < switch_index
+            alpha = 0;
+        elseif k >= switch_index && k < blend_end_index
+            if isnan(blend_time) || blend_time <= 0
+                alpha = 1;
+            else
+                alpha = (t(k) - detection_time) / max(eps, blend_time);
+                alpha = min(max(alpha,0),1);
+            end
+        else
+            alpha = 1;
+        end
+
+        % blended control: uk = (1-alpha)*(ur - uy) + alpha * pid_out
+        uk_unclamped = (1 - alpha) * (ur - uy) + alpha * pid_out;
 
         % apply actuator limits and anti-windup: if clamped, skip PID integrator update
         uk = min(max(uk_unclamped, umin), umax);
@@ -1194,22 +1006,39 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
     if isempty(switch_times)
         switch_times = zeros(0,3);
     end
-    % diagnostics output
-    diag = struct();
+end
+
+function x = align_controller_state(ctrl_ss, input_value, desired_output, fallback_state, reg)
+    % Align controller state so ctrl_ss produces desired_output for the current input.
+    % Uses a regularized least-squares solve when the direct mapping is not invertible.
+    x = fallback_state;
     try
-        diag.attack_est_hist = attack_est_hist;
-        diag.y_hat_hist = y_hat_hist;
-        diag.obs_gain_hist = obs_gain_hist;
-        diag.y_iso_hist = y_iso_hist;
-        diag.u_comp_hist = u_comp_hist;
-        diag.isolation_conf_hist = isolation_conf_hist;
+        Cc = ctrl_ss.C;
+        Dc = ctrl_ss.D;
+        if isempty(Cc)
+            return;
+        end
+        target = desired_output - Dc * input_value;
+        if isempty(ctrl_ss.A)
+            x = zeros(size(fallback_state));
+            return;
+        end
+        % Use provided regularization if given, otherwise fall back to small default.
+        if nargin < 5 || isempty(reg)
+            reg = 1e-6;
+        end
+        if size(Cc,1) == 1
+            denom = Cc * Cc.' + reg;
+            x = (Cc.' / denom) * target;
+        else
+            Regl = reg * eye(size(Cc,2));
+            x = (Cc.' * Cc + Regl) \ (Cc.' * target);
+        end
+        if any(~isfinite(x))
+            x = fallback_state;
+        end
     catch
-        diag.attack_est_hist = [];
-        diag.y_hat_hist = [];
-        diag.obs_gain_hist = [];
-        diag.y_iso_hist = [];
-        diag.u_comp_hist = [];
-        diag.isolation_conf_hist = [];
+        x = fallback_state;
     end
 end
 

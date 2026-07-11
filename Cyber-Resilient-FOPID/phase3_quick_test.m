@@ -97,7 +97,7 @@ try
     save(fullfile(matdir, ['results_phase3_quick_' run_ts '.mat']), 'results');
     fprintf(lf, 'Saved results MAT to %s\n', fullfile(matdir, ['results_phase3_quick_' run_ts '.mat']));
 
-    csvpath = fullfile(csvdir, ['results_phase3_quick_' run_ts '.csv']);
+    csvpath = phase_artifact_file('phase3', 'csv', ['results_phase3_quick_' run_ts '.csv']);
     fidcsv = fopen(csvpath,'w');
     fprintf(fidcsv,'attack_detected,confidence,detection_time,detection_delay,attack_start_time\n');
     fprintf(fidcsv,'%d,%.6f,%.6f,%.6f,%.6f\n', double(attack_flag), confidence, NaN2num(detection_time), NaN2num(detection_time - attack_config.start_time), attack_config.start_time);
@@ -144,7 +144,7 @@ try
     yline(threshold, 'r--', 'LineWidth', 1.5);
     legend('J_k','threshold','Location','best'); grid on; title('Detection metric');
 
-    save_clean_plot(hf, fullfile(plotdir, ['results_phase3_quick_' run_ts '.png']));
+    save_phase_plot(hf, 'phase3', ['results_phase3_quick_' run_ts '.png']);
 
     fprintf('\n--- Quick test results ---\n');
     fprintf('Attack flag: %d\n', attack_flag);

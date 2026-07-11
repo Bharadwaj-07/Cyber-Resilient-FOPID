@@ -5,8 +5,6 @@
 % Writes results to results/run_all/
 
 addpath(pwd);
-% ensure bundled tools are on the path
-tools_dir = fullfile(pwd,'tools'); if exist(tools_dir,'dir'), addpath(tools_dir); end
 outRoot = fullfile('results','run_all'); if ~exist(outRoot,'dir'), mkdir(outRoot); end
 logfile = fullfile(outRoot,'run_log.txt'); runfid = fopen(logfile,'w');
 closeLog = runfid > 2;
@@ -135,21 +133,6 @@ end
 % Phase 5: full comparison and resilient validation (Phase 4 is exercised here)
 try
     if exist('phase5_full_comparison.m','file')
-        % Run quick 2-DoF/resilient diagnostic before Phase5
-        if exist('phase5_check_2dof.m','file')
-            try
-                fprintf('Running phase5_check_2dof diagnostic...')
-                fprintf(runfid,']Running phase5_check_2dof diagnostic...\n');
-                phase5_check_2dof();
-                fprintf(runfid,'phase5_check_2dof completed\n');
-                run_summary(end+1,:) = {'phase5_check_2dof','phase5_check_2dof','ok'};
-            catch MEchk
-                fprintf(runfid,'phase5_check_2dof failed: %s\n', MEchk.message);
-                run_summary(end+1,:) = {'phase5_check_2dof','phase5_check_2dof','failed'};
-            end
-        else
-            fprintf(runfid,'phase5_check_2dof not found - skipping 2DoF diagnostic\n');
-        end
         % Optional: run grid-search for recovery parameters first if available
         if exist('phase5_grid_search_recovery.m','file')
             try
@@ -157,20 +140,6 @@ try
                 phase5_grid_search_recovery();
                 fprintf(runfid,'phase5_grid_search_recovery completed\n');
                 run_summary(end+1,:) = {'phase5_grid_search_recovery','phase5_grid_search_recovery','ok'};
-                % After grid completes, pick best params automatically
-                if exist('phase5_apply_best_from_grid.m','file')
-                    try
-                        fprintf('Selecting best Phase5 config from grid results...\n'); fprintf(runfid,'Selecting best Phase5 config from grid results...\n');
-                        phase5_apply_best_from_grid();
-                        fprintf(runfid,'phase5 config selection completed\n');
-                        run_summary(end+1,:) = {'phase5_apply_best_from_grid','phase5_apply_best_from_grid','ok'};
-                    catch MEsel
-                        fprintf(runfid,'phase5_apply_best_from_grid failed: %s\n', MEsel.message);
-                        run_summary(end+1,:) = {'phase5_apply_best_from_grid','phase5_apply_best_from_grid','failed'};
-                    end
-                else
-                    fprintf(runfid,'phase5_apply_best_from_grid not found - skipping auto-selection\n');
-                end
             catch MEgs
                 fprintf(runfid,'phase5_grid_search_recovery failed: %s\n', MEgs.message);
                 run_summary(end+1,:) = {'phase5_grid_search_recovery','phase5_grid_search_recovery','failed'};
@@ -179,69 +148,10 @@ try
             fprintf(runfid,'phase5_grid_search_recovery not found - skipping grid search\n');
         end
 
-        % Run the top-3 evaluator if available. This gives a deeper per-scenario
-        % comparison of the candidate configs before the final comparison pass.
-        if exist('phase5_evaluate_top3_from_grid.m','file')
-            try
-                fprintf('Running phase5_evaluate_top3_from_grid...\n'); fprintf(runfid,'Running phase5_evaluate_top3_from_grid...\n');
-                phase5_evaluate_top3_from_grid();
-                fprintf(runfid,'phase5_evaluate_top3_from_grid completed\n');
-                run_summary(end+1,:) = {'phase5_evaluate_top3_from_grid','phase5_evaluate_top3_from_grid','ok'};
-            catch MEeval
-                fprintf(runfid,'phase5_evaluate_top3_from_grid failed: %s\n', MEeval.message);
-                run_summary(end+1,:) = {'phase5_evaluate_top3_from_grid','phase5_evaluate_top3_from_grid','failed'};
-            end
-        else
-            fprintf(runfid,'phase5_evaluate_top3_from_grid not found - skipping top-3 evaluation\n');
-        end
-
-        % Run the gap-vs-continuous assessment so the pipeline captures the
-        % repeated-attack-with-recovery-gaps scenario separately.
-        if exist('phase5_assess_gap_attacks.m','file')
-            try
-                fprintf('Running phase5_assess_gap_attacks...\n'); fprintf(runfid,'Running phase5_assess_gap_attacks...\n');
-                phase5_assess_gap_attacks();
-                fprintf(runfid,'phase5_assess_gap_attacks completed\n');
-                run_summary(end+1,:) = {'phase5_assess_gap_attacks','phase5_assess_gap_attacks','ok'};
-            catch MEgap
-                fprintf(runfid,'phase5_assess_gap_attacks failed: %s\n', MEgap.message);
-                run_summary(end+1,:) = {'phase5_assess_gap_attacks','phase5_assess_gap_attacks','failed'};
-            end
-        else
-            fprintf(runfid,'phase5_assess_gap_attacks not found - skipping gap attack assessment\n');
-        end
-
         fprintf('Running phase5_full_comparison...\n'); fprintf(runfid,'Running phase5_full_comparison...\n');
         phase5_full_comparison();
         fprintf(runfid,'phase5_full_comparison completed\n'); fprintf(runfid,'phase5_full_comparison completed\n');
         run_summary(end+1,:) = {'phase5_full_comparison','phase5_full_comparison','ok'};
-        % Run additional Phase5 comparison scripts if present
-        if exist('phase5_multi_setup_compare','file')
-            try
-                fprintf('Running phase5_multi_setup_compare...\n'); fprintf(runfid,'Running phase5_multi_setup_compare...\n');
-                phase5_multi_setup_compare();
-                fprintf(runfid,'phase5_multi_setup_compare completed\n');
-                run_summary(end+1,:) = {'phase5_multi_setup_compare','tools/phase5_multi_setup_compare','ok'};
-            catch MEm
-                fprintf(runfid,'phase5_multi_setup_compare failed: %s\n', MEm.message);
-                run_summary(end+1,:) = {'phase5_multi_setup_compare','tools/phase5_multi_setup_compare','failed'};
-            end
-        else
-            fprintf(runfid,'phase5_multi_setup_compare not found - skipping\n');
-        end
-        if exist('phase5_augmented_compare','file')
-            try
-                fprintf('Running phase5_augmented_compare...\n'); fprintf(runfid,'Running phase5_augmented_compare...\n');
-                phase5_augmented_compare();
-                fprintf(runfid,'phase5_augmented_compare completed\n');
-                run_summary(end+1,:) = {'phase5_augmented_compare','tools/phase5_augmented_compare','ok'};
-            catch MEnt
-                fprintf(runfid,'phase5_augmented_compare failed: %s\n', MEnt.message);
-                run_summary(end+1,:) = {'phase5_augmented_compare','tools/phase5_augmented_compare','failed'};
-            end
-        else
-            fprintf(runfid,'phase5_augmented_compare not found - skipping\n');
-        end
     else
         fprintf('phase5_full_comparison not found - skipping\n'); fprintf(runfid,'phase5_full_comparison not found - skipping\n');
         run_summary(end+1,:) = {'phase5_full_comparison','phase5_full_comparison','missing'};
@@ -278,12 +188,12 @@ csvpath = fullfile(phase_artifacts('phase5').csv, 'phase5_comparison.csv');
     T = readtable(csvpath);
     outfig = fullfile(outRoot,'phase5_ITAE.png');
     try
-        hf = figure('Visible','off','Color','w');
+        hf = figure('Visible','off');
         bar([T.itae_2dof, T.itae_pid, T.itae_res]);
         set(gca,'XTickLabel', cellstr(string(T.scenario_name)));
         legend('2DoF','PID','Resilient','Location','northwest');
         title('Phase5 ITAE Comparison'); ylabel('ITAE'); grid on;
-        save_clean_plot(hf, outfig, 200);
+        exportgraphics(hf, outfig, 'Resolution', 150);
         close(hf);
         fprintf('Saved Phase5 ITAE plot to %s\n', outfig);
         % If Phase5 shows 2DoF catastrophically worse than PID in any scenario,

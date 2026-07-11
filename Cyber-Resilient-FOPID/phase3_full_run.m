@@ -24,8 +24,8 @@ else
     closeLog = fidlog > 2;
     if fidlog < 0, error('Cannot open log file'); end
 end
-csvfile = fullfile(csvdir, ['phase3_summary_' timestamp '.csv']);
-matfile = fullfile(matdir, ['phase3_data_' timestamp '.mat']);
+csvfile = phase_artifact_file('phase3', 'csv', ['phase3_summary_' timestamp '.csv']);
+matfile = phase_artifact_file('phase3', 'mat', ['phase3_data_' timestamp '.mat']);
 fprintf(fidlog, 'Phase3 full run log — %s\n', datestr(now));
 
 try
@@ -170,7 +170,7 @@ try
 
         % Plot per-run figure using the shared clean Phase 3 plot layout.
         try
-            plotfile = fullfile(plotdir, sprintf('scenario_%02d_%s.png', sc.id, sc.type));
+            plotfile = phase_artifact_file('phase3', 'plots', sprintf('scenario_%02d_%s.png', sc.id, sc.type));
             avr_phase3_plot(runres, plotfile);
         catch ME
             warning('Scenario plot failed: %s', ME.message);

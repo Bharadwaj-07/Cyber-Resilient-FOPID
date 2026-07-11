@@ -34,7 +34,7 @@ disp(['Baseline saved to ' fullfile(paths.mat, 'avr_baseline.mat')]);
 
 summary = table(info.RiseTime, info.SettlingTime, info.Overshoot, info.Undershoot, info.Peak, info.PeakTime, ITAE, ...
     'VariableNames', {'rise_time','settling_time','overshoot','undershoot','peak','peak_time','itae'});
-writetable(summary, fullfile(paths.csv, 'avr_baseline_summary.csv'));
+write_phase_table('phase1', 'avr_baseline_summary.csv', summary);
 
 % --- Annotated step plot ---
 hf = figure('Name','Baseline Step Response','Visible','off','Color','w');
@@ -49,5 +49,5 @@ add_event_label(gca, info.SettlingTime, sprintf('Ts = %.2fs', info.SettlingTime)
 grid on; hold off;
 title('AVR plant — uncontrolled step response');
 ylabel('Vt (pu)'); xlabel('Time (s)');
-save_clean_plot(hf, fullfile(paths.plots, 'avr_baseline_step.png'));
+save_phase_plot(hf, 'phase1', 'avr_baseline_step.png');
 close(hf);

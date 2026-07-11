@@ -1,4 +1,4 @@
-function avr_phase3_plot(result, outname)
+function hf = avr_phase3_plot(result, outname)
 % AVR_PHASE3_PLOT Plot phase-3 results for one scenario
 % avr_phase3_plot(result) or avr_phase3_plot('results/phase3_bias.mat')
 %
@@ -76,9 +76,15 @@ if ~isnan(dt), add_event_label(ax, dt, 'Detection', 'right'); end
 
 sgtitle(sprintf('Attack: %s | det=%s', r.attack_type, num2str(dt)));
 if nargin >= 2 && ~isempty(outname)
-    % ensure results dir
     outdir = fileparts(outname);
-    if ~isempty(outdir) && ~exist(outdir,'dir'), mkdir(outdir); end
+    if ~isempty(outdir) && ~exist(outdir,'dir')
+        mkdir(outdir);
+    end
+    save_clean_plot(hf, outname, 200);
+end
+
+if nargout == 0
+    close(hf);
 end
 end
 
