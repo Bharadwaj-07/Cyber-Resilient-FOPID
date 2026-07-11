@@ -57,7 +57,7 @@ pal = phase_plot_palette();
 augplotdir = fullfile(paths5.plots, 'augmented');
 if ~exist(augplotdir,'dir'), mkdir(augplotdir); end
 results_aug_plot_dir = fullfile('results','phase5','plots','augmented');
-if ~exist(results_aug_plot_dir,'dir'), mkdir(results_aug_plot_dir,'recursive'); end
+if ~exist(results_aug_plot_dir,'dir'), mkdir(results_aug_plot_dir); end
 
 % Ensure we have controllers
 if ~exist('C_2dof_y','var') || isempty(C_2dof_y)

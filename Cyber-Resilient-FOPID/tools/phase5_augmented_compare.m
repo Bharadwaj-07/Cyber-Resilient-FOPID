@@ -135,7 +135,7 @@ for is = 1:numel(scenarios)
     save_clean_plot(hf, plotfile, 200);
     % Also copy to top-level results folder for easy aggregation
     results_plot_dir = fullfile('results','phase5','plots','augmented');
-    if ~exist(results_plot_dir,'dir'), mkdir(results_plot_dir,'recursive'); end
+    if ~exist(results_plot_dir,'dir'), mkdir(results_plot_dir); end
     try copyfile(plotfile, fullfile(results_plot_dir, sprintf('%s_augmented_compare.png', sc.name))); catch, end
     close(hf);
 
