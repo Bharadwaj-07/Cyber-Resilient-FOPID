@@ -64,8 +64,13 @@ for is = 1:numel(scenarios)
     itae_2dof = safe_itae(y_2dof, t, 1e6);
 
     % Resilient: detect from 2DoF baseline then run resilient sim
-    [attack_flag, ~, detection_time, ~] = direct_baseline_detector(y_2dof, y_2dof, t, struct('baseline_window',5,'window_size',50,'threshold_factor',3,'min_consecutive',3,'startup_suppress',4.8));
-    [u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler( plant_ss, sensor_ss, C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
+    [attack_flag, ~, detection_time, ~] = direct_baseline_detector(y_2dof, y_2dof, t, struct('baseline_window',5,'window_size',50,'threshold_factor',2.2,'min_consecutive',2,'startup_suppress',4.4));
+    cfg = struct('blend_time',0.6,'isolation_tau',0.15,'observer_recovery_time',0.8,'actuator_limits',[-5 5]);
+    cfg.use_attack_subtraction = true;
+    cfg.use_aggressive_obs_gain = true;
+    cfg.observer_min_gain = 0.08;
+    cfg.observer_innovation_limit = 0.02;
+    [u_res, mode_hist, switch_times, y_res, diag] = simulate_resilient_closedloop_euler( plant_ss, sensor_ss, C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, cfg);
     y_res = sanitize_signal(y_res);
     itae_res = safe_itae(y_res, t, 1e6);
 

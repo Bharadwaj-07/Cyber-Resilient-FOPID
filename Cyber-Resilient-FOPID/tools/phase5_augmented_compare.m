@@ -53,7 +53,12 @@ for is = 1:numel(scenarios)
 
     % Augmented PID: use the same controller in both reference and feedback
     % paths so the resilient wrapper preserves the nominal PID behavior.
-    [u_res_pid,~,switch_times_pid,y_res_pid,diag_pid] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_pid, C_pid, C_pid, t, r, attack_cfg, 1, 5, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
+    cfg = struct('blend_time',0.6,'isolation_tau',0.15,'observer_recovery_time',0.8,'actuator_limits',[-5 5]);
+    cfg.use_attack_subtraction = true;
+    cfg.use_aggressive_obs_gain = true;
+    cfg.observer_min_gain = 0.08;
+    cfg.observer_innovation_limit = 0.02;
+    [u_res_pid,~,switch_times_pid,y_res_pid,diag_pid] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_pid, C_pid, C_pid, t, r, attack_cfg, 1, 5, cfg);
     y_res_pid = sanitize_signal(y_res_pid); itae_res_pid = safe_itae(y_res_pid,t,1e6);
 
     % Baseline 1DoF (feedback-only)
@@ -62,7 +67,7 @@ for is = 1:numel(scenarios)
 
     % Augmented 1DoF: duplicate the controller into both 2DoF paths so the
     % resilient pipeline sees the same closed-loop shape as the baseline.
-    [u_res_1d,~,switch_times_1d,y_res_1d,diag_1d] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_1dof, C_1dof, C_1dof, t, r, attack_cfg, 1, 5, struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]));
+    [u_res_1d,~,switch_times_1d,y_res_1d,diag_1d] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_1dof, C_1dof, C_1dof, t, r, attack_cfg, 1, 5, cfg);
     y_res_1d = sanitize_signal(y_res_1d); itae_res_1d = safe_itae(y_res_1d,t,1e6);
 
     % Baseline 2DoF
@@ -70,7 +75,7 @@ for is = 1:numel(scenarios)
     y_2dof = sanitize_signal(y_2dof); itae_2dof = safe_itae(y_2dof,t,1e6);
 
     % Augmented 2DoF: keep the same recovery profile as the PID and 1DoF branches.
-    cfg_2d = struct('blend_time',0.5,'isolation_tau',0.25,'observer_recovery_time',1.0,'actuator_limits',[-5 5]);
+    cfg_2d = cfg;
     [u_res_2d,~,switch_times_2d,y_res_2d,diag_2d] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_2dof_r, C_2dof_y, C_pid, t, r, attack_cfg, 1, 5, cfg_2d);
     y_res_2d = sanitize_signal(y_res_2d); itae_res_2d = safe_itae(y_res_2d,t,1e6);
 

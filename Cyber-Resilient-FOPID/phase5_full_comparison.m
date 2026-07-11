@@ -142,13 +142,15 @@ scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency
 % Detector & switcher defaults for the validation matrix.
 % Use a tighter detector here so Phase 5 separates attack cases earlier and
 % reduces quantized detection times in the anomaly summary.
-detector_cfg = struct('baseline_window',5,'window_size',50,'threshold_factor',3,'Q',1e-6,'R',1e-4,'min_consecutive',3,'startup_suppress',4.8,'confidence_cap',10);
-% Safer default switching: longer blend/recovery and tighter actuator limits
-% to avoid abrupt control jumps during bumpless transfer. Expose a
-% bumpless_reg regularization parameter used when aligning controller state.
-switcher_cfg = struct('hysteresis_time',2,'blend_time',1.5,'recovery_time',2.0,'actuator_limits',[-5 5],'initial_mode',1);
-% Slightly stronger default regularization to avoid large alignment pushes
-switcher_cfg.bumpless_reg = 1e-2;
+detector_cfg = struct('baseline_window',5,'window_size',50,'threshold_factor',2.2,'Q',1e-6,'R',1e-4,'min_consecutive',2,'startup_suppress',4.4,'confidence_cap',10);
+% Stronger recovery tuning: detect earlier, subtract the estimated attack,
+% and let the observer react more aggressively after the switch.
+switcher_cfg = struct('hysteresis_time',1.5,'blend_time',0.6,'recovery_time',1.0,'actuator_limits',[-5 5],'initial_mode',1);
+switcher_cfg.use_attack_subtraction = true;
+switcher_cfg.use_aggressive_obs_gain = true;
+switcher_cfg.observer_min_gain = 0.08;
+switcher_cfg.observer_innovation_limit = 0.02;
+switcher_cfg.bumpless_reg = 5e-3;
 switcher_cfg.heuristic_switching_enabled = false;
 
 % Allow user-provided overrides via a small config MAT file created by the
