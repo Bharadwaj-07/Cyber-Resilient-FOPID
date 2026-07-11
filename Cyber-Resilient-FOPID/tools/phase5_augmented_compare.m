@@ -11,6 +11,7 @@ phase2mat = fullfile(phase_artifacts('phase2').mat, 'avr_phase2.mat');
 data = struct(); if exist(phase2mat,'file'), data = load(phase2mat); end
 G_amp = tf(Ka,[Ta 1]); G_exc = tf(Ke,[Te 1]); G_gen = tf(Kg,[Tg 1]); G_sen = tf(Ks,[Ts 1]);
 G_fwd = minreal(G_amp * G_exc * G_gen);
+pal = phase_plot_palette();
 
 % Controllers: fallbacks where missing
 if isfield(data,'C_y'), C_2dof_y = data.C_y; end
@@ -76,8 +77,8 @@ for is = 1:numel(scenarios)
     tiledlayout(3,2,'Padding','compact','TileSpacing','compact');
 
     nexttile;
-    plot(t, y_pid, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.2); hold on;
-    plot(t, y_res_pid, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.2);
+    plot(t, y_pid, 'Color', pal.baseline, 'LineWidth', 1.2); hold on;
+    plot(t, y_res_pid, 'Color', pal.comparison, 'LineWidth', 1.2);
     grid on; title('PID: baseline vs augmented'); ylabel('y');
     legend('baseline PID','augmented PID','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
@@ -85,8 +86,8 @@ for is = 1:numel(scenarios)
     add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
 
     nexttile;
-    plot(t, abs(r - y_pid), '--', 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.0); hold on;
-    plot(t, abs(r - y_res_pid), 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
+    plot(t, abs(r - y_pid), '--', 'Color', pal.baseline, 'LineWidth', 1.0); hold on;
+    plot(t, abs(r - y_res_pid), 'Color', pal.comparison, 'LineWidth', 1.1);
     grid on; title('PID tracking error'); ylabel('|e|');
     legend('baseline PID','augmented PID','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
@@ -94,8 +95,8 @@ for is = 1:numel(scenarios)
     add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
 
     nexttile;
-    plot(t, y_1dof, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.2); hold on;
-    plot(t, y_res_1d, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.2);
+    plot(t, y_1dof, 'Color', pal.baseline, 'LineWidth', 1.2); hold on;
+    plot(t, y_res_1d, 'Color', pal.comparison, 'LineWidth', 1.2);
     grid on; title('1DoF: baseline vs augmented'); ylabel('y');
     legend('baseline 1DoF','augmented 1DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
@@ -103,8 +104,8 @@ for is = 1:numel(scenarios)
     add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
 
     nexttile;
-    plot(t, abs(r - y_1dof), '--', 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.0); hold on;
-    plot(t, abs(r - y_res_1d), 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
+    plot(t, abs(r - y_1dof), '--', 'Color', pal.baseline, 'LineWidth', 1.0); hold on;
+    plot(t, abs(r - y_res_1d), 'Color', pal.comparison, 'LineWidth', 1.1);
     grid on; title('1DoF tracking error'); ylabel('|e|');
     legend('baseline 1DoF','augmented 1DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
@@ -112,8 +113,8 @@ for is = 1:numel(scenarios)
     add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
 
     nexttile;
-    plot(t, y_2dof, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.2); hold on;
-    plot(t, y_res_2d, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.2);
+    plot(t, y_2dof, 'Color', pal.baseline, 'LineWidth', 1.2); hold on;
+    plot(t, y_res_2d, 'Color', pal.comparison, 'LineWidth', 1.2);
     grid on; title('2DoF: baseline vs augmented'); xlabel('Time (s)'); ylabel('y');
     legend('baseline 2DoF','augmented 2DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);
@@ -121,8 +122,8 @@ for is = 1:numel(scenarios)
     add_event_label(gca, attack_cfg.start_time, 'Attack start', 'left');
 
     nexttile;
-    plot(t, abs(r - y_2dof), '--', 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.0); hold on;
-    plot(t, abs(r - y_res_2d), 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
+    plot(t, abs(r - y_2dof), '--', 'Color', pal.baseline, 'LineWidth', 1.0); hold on;
+    plot(t, abs(r - y_res_2d), 'Color', pal.comparison, 'LineWidth', 1.1);
     grid on; title('2DoF tracking error'); xlabel('Time (s)'); ylabel('|e|');
     legend('baseline 2DoF','augmented 2DoF','Location','best');
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.16);

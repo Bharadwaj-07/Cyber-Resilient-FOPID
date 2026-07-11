@@ -17,6 +17,7 @@ if isfield(data,'C_y_1dof'), C_1dof = data.C_y_1dof; end
 if isfield(data,'C_pid'), C_pid = data.C_pid; end
 G_amp = tf(Ka,[Ta 1]); G_exc = tf(Ke,[Te 1]); G_gen = tf(Kg,[Tg 1]); G_sen = tf(Ks,[Ts 1]);
 G_fwd = minreal(G_amp * G_exc * G_gen);
+pal = phase_plot_palette();
 if ~exist('C_2dof_y','var') || isempty(C_2dof_y)
     try C_2dof_y = pidtune(G_fwd * G_sen, 'PID'); C_2dof_r = C_2dof_y; catch, C_2dof_y = pid(1,1,0.1); C_2dof_r = C_2dof_y; end
 end
@@ -111,10 +112,10 @@ function create_multi_plots(results_table, t)
             y_pid = zeros(size(t)); y_1d = zeros(size(t)); y_2d = zeros(size(t)); y_res = zeros(size(t));
         end
         hf = figure('Visible','off','Color','w');
-        plot(t, y_1d, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.1); hold on;
-        plot(t, y_2d, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
-        plot(t, y_pid, 'Color', [0.4660 0.6740 0.1880], 'LineWidth', 1.1);
-        plot(t, y_res, 'Color', [0.4940 0.1840 0.5560], 'LineWidth', 1.1);
+        plot(t, y_1d, 'Color', pal.baseline, 'LineWidth', 1.1); hold on;
+        plot(t, y_2d, 'Color', pal.comparison, 'LineWidth', 1.1);
+        plot(t, y_pid, 'Color', pal.tertiary, 'LineWidth', 1.1);
+        plot(t, y_res, 'Color', pal.resilient, 'LineWidth', 1.1);
         legend('1DoF','2DoF','PID','Resilient'); title(['Multi-setup - ' sc]); grid on;
         plotfile = fullfile(plotdir, [sc '_multi_compare.png']); save_plot(hf, plotfile); close(hf);
         try copyfile(plotfile, fullfile(results_plot_dir, [sc '_multi_compare.png'])); catch, end

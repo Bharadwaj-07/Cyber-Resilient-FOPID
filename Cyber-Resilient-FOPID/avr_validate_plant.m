@@ -38,7 +38,8 @@ write_phase_table('phase1', 'avr_baseline_summary.csv', summary);
 
 % --- Annotated step plot ---
 hf = figure('Name','Baseline Step Response','Visible','off','Color','w');
-plot(t_out, y, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.6); hold on;
+pal = phase_plot_palette();
+plot(t_out, y, 'Color', pal.baseline, 'LineWidth', 1.6); hold on;
 hsp = yline(1.0, '--k');
 try set(hsp, 'DisplayName', 'Setpoint'); catch; end
 hpeak = yline(1 + info.Overshoot/100, ':r');

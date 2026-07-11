@@ -106,10 +106,11 @@ try
     % Plots
     hf = figure('Name','Phase3 Quick Test','Visible','on','Color','w','Position',[100 80 1200 900]);
     tiledlayout(3,1,'Padding','compact','TileSpacing','compact');
+    pal = phase_plot_palette();
     nexttile;
-    plot(t, r_ref, '--', 'Color', [0.15 0.15 0.15], 'LineWidth', 1.1); hold on;
-    plot(t, y_true, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.4);
-    plot(t, y_meas, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
+    plot(t, r_ref, '--', 'Color', pal.reference, 'LineWidth', 1.1); hold on;
+    plot(t, y_true, 'Color', pal.baseline, 'LineWidth', 1.4);
+    plot(t, y_meas, 'Color', pal.comparison, 'LineWidth', 1.1);
     attack_signal = y_meas - y_true;
     attack_signal(~isfinite(attack_signal)) = 0;
     shade_attack_window(gca, attack_config.start_time, t(end), [0.65 0.80 1.0], 0.18);
@@ -121,13 +122,13 @@ try
     title('Reference, true output, and attacked measurement'); grid on;
 
     nexttile;
-    plot(t, residuals, 'Color', [0.4940 0.1840 0.5560], 'LineWidth', 1.1); hold on;
+    plot(t, residuals, 'Color', pal.resilient, 'LineWidth', 1.1); hold on;
     shade_attack_window(gca, attack_config.start_time, t(end), [0.65 0.80 1.0], 0.18);
     if ~isnan(detection_time)
         xline(detection_time, 'r--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
         add_event_label(gca, detection_time, 'Detection', 'right');
     end
-    plot(t, attack_signal, 'Color', [0.4660 0.6740 0.1880], 'LineWidth', 1.0);
+    plot(t, attack_signal, 'Color', pal.tertiary, 'LineWidth', 1.0);
     if isfield(attack_config,'start_time') && isfinite(attack_config.start_time)
         xline(attack_config.start_time, 'b-.', 'HandleVisibility', 'off');
         add_event_label(gca, attack_config.start_time, 'Attack start', 'left');
@@ -136,7 +137,7 @@ try
 
     nexttile;
     Jk = abs(residuals) + movmean(abs(residuals), detector_config.window_size);
-    plot(t, Jk, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.1); hold on;
+    plot(t, Jk, 'Color', pal.baseline, 'LineWidth', 1.1); hold on;
     shade_attack_window(gca, attack_config.start_time, t(end), [0.65 0.80 1.0], 0.18);
     idx_baseline_end = find(t <= detector_config.baseline_window, 1, 'last');
     sigma = std(residuals(1:idx_baseline_end));

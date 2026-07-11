@@ -53,6 +53,7 @@ end
 
 G_amp = tf(Ka,[Ta 1]); G_exc = tf(Ke,[Te 1]); G_gen = tf(Kg,[Tg 1]); G_sen = tf(Ks,[Ts 1]);
 G_fwd = minreal(G_amp * G_exc * G_gen);
+pal = phase_plot_palette();
 
 % Ensure we have controllers
 if ~exist('C_2dof_y','var') || isempty(C_2dof_y)
@@ -360,11 +361,11 @@ for i = 1:length(scenarios)
     % plot - include measured (attacked) signal, control action, and mark attack start
     hf = figure('Visible','on','Color','w','Position',[100 80 1200 1000]);
     subplot(4,1,1);
-    plot(t, y_1dof_sc, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.1); hold on;
-    plot(t, y_2dof_sc, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
-    plot(t, y_pid_sc, 'Color', [0.4660 0.6740 0.1880], 'LineWidth', 1.1);
-    plot(t, y_res, 'Color', [0.4940 0.1840 0.5560], 'LineWidth', 1.2);
-    plot(t, y_meas, 'k--', 'LineWidth', 1.0);
+    plot(t, y_1dof_sc, 'Color', pal.baseline, 'LineWidth', 1.1); hold on;
+    plot(t, y_2dof_sc, 'Color', pal.comparison, 'LineWidth', 1.1);
+    plot(t, y_pid_sc, 'Color', pal.tertiary, 'LineWidth', 1.1);
+    plot(t, y_res, 'Color', pal.resilient, 'LineWidth', 1.2);
+    plot(t, y_meas, 'Color', pal.reference, 'LineStyle', '--', 'LineWidth', 1.0);
     legend('1DoF','2DoF','PID','Resilient','y_{meas}');
     title(['Outputs - ' sc.name]); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
@@ -374,7 +375,7 @@ for i = 1:length(scenarios)
     end
 
     subplot(4,1,2);
-    plot(t, u_res, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.1); hold on; xlabel('Time (s)'); ylabel('u'); title('Control action (resilient)'); grid on;
+    plot(t, u_res, 'Color', pal.baseline, 'LineWidth', 1.1); hold on; xlabel('Time (s)'); ylabel('u'); title('Control action (resilient)'); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
     if ~isnan(detection_time)
         xline(detection_time,'r--','HandleVisibility','off');
@@ -382,7 +383,7 @@ for i = 1:length(scenarios)
     end
 
     subplot(4,1,3);
-    plot(t, residuals, 'Color', [0.4940 0.1840 0.5560], 'LineWidth', 1.1); title('Residuals'); grid on;
+    plot(t, residuals, 'Color', pal.resilient, 'LineWidth', 1.1); title('Residuals'); grid on;
     shade_attack_window(gca, attack_cfg.start_time, t(end), [0.65 0.80 1.0], 0.18);
     if ~isnan(detection_time)
         xline(detection_time,'r--','HandleVisibility','off');

@@ -24,6 +24,7 @@ if isfield(r,'residual_peak'), residual_peak = r.residual_peak; else residual_pe
 if isfield(r,'residual_rms'), residual_rms = r.residual_rms; else residual_rms = NaN; end
 attack_signal = y_meas - r.y_true;
 attack_signal(~isfinite(attack_signal)) = 0;
+pal = phase_plot_palette();
 
 if isfield(r,'attack_config') && isstruct(r.attack_config) && isfield(r.attack_config,'start_time')
     attack_start = r.attack_config.start_time;
@@ -35,8 +36,8 @@ hf = figure('Units','normalized','Position',[0.05 0.06 0.90 0.78],'Color','w','V
 tiledlayout(3,1,'Padding','compact','TileSpacing','compact');
 
 nexttile;
-plot(t, r.y_true, 'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.5); hold on;
-plot(t, y_meas, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.1);
+plot(t, r.y_true, 'Color', pal.baseline, 'LineWidth', 1.5); hold on;
+plot(t, y_meas, 'Color', pal.comparison, 'LineWidth', 1.1);
 yline(1.0, 'k:');
 shade_attack_window(gca, attack_start, t(end), [0.65 0.80 1.0], 0.18);
 % draw vertical event lines without labels, labels placed with add_event_label
@@ -52,7 +53,7 @@ if ~isnan(attack_start), add_event_label(ax, attack_start, 'Attack start', 'left
 if ~isnan(dt), add_event_label(ax, dt, 'Detection', 'right'); end
 
 nexttile;
-plot(t, residuals, 'Color', [0.4940 0.1840 0.5560], 'LineWidth', 1.1); hold on; yline(0,'k:');
+plot(t, residuals, 'Color', pal.resilient, 'LineWidth', 1.1); hold on; yline(0,'k:');
 shade_attack_window(gca, attack_start, t(end), [0.65 0.80 1.0], 0.18);
 if ~isnan(attack_start), xline(attack_start, 'b-.', 'HandleVisibility','off'); end
 if ~isnan(dt), xline(dt,'m--','HandleVisibility','off'); end
@@ -64,7 +65,7 @@ if ~isnan(dt), add_event_label(ax, dt, 'Detection', 'left'); end
 
 nexttile;
 Jk = abs(residuals) + movmean(abs(residuals), max(5, round(0.05 / max(t(2)-t(1), eps))));
-plot(t, Jk, 'Color', [0.4660 0.6740 0.1880], 'LineWidth', 1.1); hold on;
+plot(t, Jk, 'Color', pal.tertiary, 'LineWidth', 1.1); hold on;
 shade_attack_window(gca, attack_start, t(end), [0.65 0.80 1.0], 0.18);
 if ~isnan(attack_start), xline(attack_start, 'b-.', 'HandleVisibility','off'); end
 if ~isnan(dt), xline(dt,'m--','HandleVisibility','off'); end

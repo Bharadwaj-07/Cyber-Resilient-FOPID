@@ -52,9 +52,10 @@ ITAE_2dof = itae(y_2dof, t3);
 
 % --- Comparison plot ---
 hf = figure('Name','Controller Comparison','Position',[100 100 800 450],'Visible','off','Color','w');
-plot(t1, y_pid,  'Color', [0.0000 0.4470 0.7410], 'LineWidth', 1.7); hold on;
-plot(t2, y_1dof, 'Color', [0.8500 0.3250 0.0980], 'LineStyle', '--', 'LineWidth', 1.7);
-plot(t3, y_2dof, 'Color', [0.4660 0.6740 0.1880], 'LineWidth', 2.0);
+pal = phase_plot_palette();
+plot(t1, y_pid,  'Color', pal.baseline, 'LineWidth', 1.7); hold on;
+plot(t2, y_1dof, 'Color', pal.comparison, 'LineStyle', '--', 'LineWidth', 1.7);
+plot(t3, y_2dof, 'Color', pal.tertiary, 'LineWidth', 2.0);
 yline(1.0, 'k:', 'Setpoint');
 grid on; hold off;
 legend('Classical PID', '1DoF FOPID', '2DoF FOPID (tuned)', ...
