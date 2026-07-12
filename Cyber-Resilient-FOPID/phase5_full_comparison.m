@@ -1081,33 +1081,31 @@ function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloo
             innovation = y_meas - y_hat;
             innovation = max(min(innovation, 1e6), -1e6);
             if isfinite(detection_time) && t(k) >= detection_time
-                % After detection, keep the nominal 2DoF controller and feed
-                % it the observer reconstruction directly. This follows the
-                % attack-reconstruction literature more closely than trying to
-                % switch into a separate recovery controller.
-                iso_gain = min(1, dt / max(eps, isolation_tau));
-                attack_est = (1 - iso_gain) * attack_est + iso_gain * innovation;
-                max_attack_est = max(abs(y_hat) * 2, 10 * observer_innovation_limit);
-                if ~isfinite(max_attack_est) || max_attack_est <= 0
-                    max_attack_est = 1.0;
-                end
-                attack_est = max(min(attack_est, max_attack_est), -max_attack_est);
+            
+                % Direct attack estimate (no low-pass filtering)
+                attack_est = innovation;
+            
+                % Feed reconstructed measurement to controller
                 y_iso = y_hat;
-                isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
                 y_ctrl = y_hat;
-                obs_gain = max(observer_min_gain, 1 - max(0, t(k) - detection_time) / observer_recovery_time);
+            
+                isolation_conf = 1;
+                obs_gain = 1;
+            
             else
-                % Before detection, stay measurement-driven so the observer
-                % remains synchronized with the nominal closed loop.
+            
                 attack_est = 0;
+            
                 y_iso = y_meas;
                 y_ctrl = y_meas;
+            
                 isolation_conf = 0;
                 obs_gain = 1;
+            
             end
-            innovation_gain = min(1, observer_innovation_limit / max(observer_innovation_limit, abs(innovation)));
-            obs_gain = max(observer_min_gain, obs_gain * innovation_gain);
-            zhat = zhat + (Aobs * zhat + Bobs * u_prev + obs_gain * (Lobs * innovation)) * dt;
+            %innovation_gain = min(1, observer_innovation_limit / max(observer_innovation_limit, abs(innovation)));
+            %obs_gain = max(observer_min_gain, obs_gain * innovation_gain);
+            zhat = zhat + (Aobs * zhat + Bobs * u_prev) * dt;
             % record diagnostics
             attack_est_hist(k) = attack_est;
             y_hat_hist(k) = y_hat;

@@ -151,16 +151,10 @@ for k = 1:N
             y_iso = y_hat;
             isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
 
-            % Recovery detection: if isolation confidence drops below threshold for
-            % sustained period, consider recovery.
+            % MODIFIED: Removed sustained period requirement - instant recovery
             rec_thresh = 0.15;
-            if isolation_conf < rec_thresh
-                recovery_counter = recovery_counter + dt;
-            else
-                recovery_counter = 0;
-            end
-            if ~in_recovery && recovery_counter >= recovery_time
-                in_recovery = true;
+            if ~in_recovery && isolation_conf < rec_thresh
+                in_recovery = true;  % Instant recovery trigger (no hysteresis)
                 recovery_start_time = t(k);
             end
 
