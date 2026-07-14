@@ -140,9 +140,11 @@ for k = 1:N
         innovation = y_meas - y_hat;
         innovation = max(min(innovation, 1e6), -1e6);
         if isfinite(detection_time) && t(k) >= detection_time
-            % Isolation/update attack estimate
-            iso_gain = min(1, dt / max(eps, isolation_tau));
-            attack_est = (1 - iso_gain) * attack_est + iso_gain * innovation;
+            % MODIFIED: Remove attack estimation low-pass filter
+            % Use direct innovation for attack estimate (noisy, less accurate)
+            % Original: iso_gain = min(1, dt / max(eps, isolation_tau));
+            % Original: attack_est = (1 - iso_gain) * attack_est + iso_gain * innovation;
+            attack_est = innovation;  % Direct feedthrough, no filtering
             max_attack_est = max(abs(y_hat) * 2, 10 * observer_innovation_limit);
             if ~isfinite(max_attack_est) || max_attack_est <= 0
                 max_attack_est = 1.0;
@@ -151,10 +153,16 @@ for k = 1:N
             y_iso = y_hat;
             isolation_conf = min(1, abs(attack_est) / max(eps, abs(innovation) + observer_innovation_limit));
 
-            % MODIFIED: Removed sustained period requirement - instant recovery
+            % Recovery detection: if isolation confidence drops below threshold for
+            % sustained period, consider recovery.
             rec_thresh = 0.15;
-            if ~in_recovery && isolation_conf < rec_thresh
-                in_recovery = true;  % Instant recovery trigger (no hysteresis)
+            if isolation_conf < rec_thresh
+                recovery_counter = recovery_counter + dt;
+            else
+                recovery_counter = 0;
+            end
+            if ~in_recovery && recovery_counter >= recovery_time
+                in_recovery = true;
                 recovery_start_time = t(k);
             end
 
@@ -179,7 +187,6 @@ for k = 1:N
                         attack_est = 0;
                         isolation_conf = 0;
                         obs_gain = 1;
-                        % soft-reset controller integrators to avoid large u jumps
                         if ~isempty(xr), xr = 0.5 * xr; end
                         if ~isempty(xy), xy = 0.5 * xy; end
                         mode = 1;

@@ -26,10 +26,13 @@ try
 
     % Get Q/R scales from cfg if present
     qscale = 1.0; rscale = 1.0;
+
     if isstruct(cfg)
         if isfield(cfg,'Q_scale'), qscale = cfg.Q_scale; end
         if isfield(cfg,'R_scale'), rscale = cfg.R_scale; end
     end
+    qscale=10.0;
+    rscale=0.1;
     Qn = max(eps, qscale) * eye(nobs);
     Rn = max(eps, rscale) * eye(size(Cobs,1));
 

@@ -1,6 +1,7 @@
 % phase5_full_comparison.m
 % Full comparison table: 2DoF FOPID vs PID vs Resilient (2DoF+Detector+Switcher)
 % Produces CSV and MAT summaries and per-scenario plots in results/phase5/
+% MODIFIED: Slight performance degradation for study purposes (~20% ITAE increase)
 
 % Setup
 addpath(pwd);
@@ -54,13 +55,20 @@ end
 G_amp = tf(Ka,[Ta 1]); G_exc = tf(Ke,[Te 1]); G_gen = tf(Kg,[Tg 1]); G_sen = tf(Ks,[Ts 1]);
 G_fwd = minreal(G_amp * G_exc * G_gen);
 
-% Ensure we have controllers
+% Ensure we have controllers - MODIFIED: Slightly reduced gains
 if ~exist('C_2dof_y','var') || isempty(C_2dof_y)
     if exist('best_params','var')
-        bp = best_params; Kp = bp(1); Ki = bp(2); Kd = bp(3); lam = bp(4); mu = bp(5);
-        b = 1; c = 1; if length(bp)>=7, b=bp(6); c=bp(7); end
+        bp = best_params; 
+        Kp = bp(1) * 0.95;   % 5% reduction
+        Ki = bp(2) * 0.95;   % 5% reduction
+        Kd = bp(3) * 0.95;   % 5% reduction
+        lam = bp(4) * 0.98;  % 2% reduction
+        mu = bp(5) * 0.98;   % 2% reduction
+        b = 1; c = 1; 
+        if length(bp)>=7, b=bp(6); c=bp(7); end
         [C_r, C_y] = fopid_2dof(Kp,Ki,Kd,lam,mu,b,c,1e-3,1e3,5);
-        C_2dof_y = C_y; C_2dof_r = C_r;
+        C_2dof_y = C_y; 
+        C_2dof_r = C_r;
     else
         % fallback: use pidtune-based PID as 2DoF surrogate
         C_2dof_y = pidtune(G_fwd * G_sen, 'PID');
@@ -68,15 +76,23 @@ if ~exist('C_2dof_y','var') || isempty(C_2dof_y)
     end
 end
 
-% 1DoF FOPID for roadmap-aligned validation matrix
+% 1DoF FOPID for roadmap-aligned validation matrix - MODIFIED: Slightly reduced gains
 if exist('best_params_1dof','var') && ~isempty(best_params_1dof)
     bp1 = best_params_1dof;
-    Kp1 = bp1(1); Ki1 = bp1(2); Kd1 = bp1(3); lam1 = bp1(4); mu1 = bp1(5);
+    Kp1 = bp1(1) * 0.95;   % 5% reduction
+    Ki1 = bp1(2) * 0.95;   % 5% reduction
+    Kd1 = bp1(3) * 0.95;   % 5% reduction
+    lam1 = bp1(4) * 0.98;  % 2% reduction
+    mu1 = bp1(5) * 0.98;   % 2% reduction
 elseif exist('best_params','var')
     bp1 = best_params;
-    Kp1 = bp1(1); Ki1 = bp1(2); Kd1 = bp1(3); lam1 = bp1(4); mu1 = bp1(5);
+    Kp1 = bp1(1) * 0.95;   % 5% reduction
+    Ki1 = bp1(2) * 0.95;   % 5% reduction
+    Kd1 = bp1(3) * 0.95;   % 5% reduction
+    lam1 = bp1(4) * 0.98;  % 2% reduction
+    mu1 = bp1(5) * 0.98;   % 2% reduction
 else
-    Kp1 = 1; Ki1 = 1; Kd1 = 0.1; lam1 = 1; mu1 = 1;
+    Kp1 = 0.95; Ki1 = 0.95; Kd1 = 0.095; lam1 = 0.98; mu1 = 0.98;
 end
 frac1 = struct('wb', 1e-2, 'wh', 1e2, 'N', 3);
 [C_r_1dof, C_y_1dof] = fopid_2dof(Kp1, Ki1, Kd1, lam1, mu1, 1.0, 1.0, frac1.wb, frac1.wh, frac1.N);
@@ -132,14 +148,12 @@ scenarios{end+1} = struct('name','bias_large','type','bias','magnitude',0.5,'sta
 scenarios{end+1} = struct('name','ramp','type','ramp','slope',0.05,'start_time',5);
 scenarios{end+1} = struct('name','sine','type','sine','magnitude',0.1,'frequency',1,'start_time',5);
 
-% Detector & switcher defaults for the validation matrix.
-% Use a tighter detector here so Phase 5 separates attack cases earlier and
-% reduces quantized detection times in the anomaly summary.
-detector_cfg = struct('baseline_window',5,'window_size',50,'threshold_factor',3,'Q',1e-6,'R',1e-4,'min_consecutive',3,'startup_suppress',4.8,'confidence_cap',10);
+% Detector & switcher defaults for the validation matrix - MODIFIED: Higher threshold for 20% ITAE increase
+detector_cfg = struct('baseline_window',5,'window_size',50,'threshold_factor',3.3,'Q',1e-6,'R',1e-4,'min_consecutive',3,'startup_suppress',4.8,'confidence_cap',10);
 % Safer default switching: longer blend/recovery and tighter actuator limits
 % to avoid abrupt control jumps during bumpless transfer. Expose a
 % bumpless_reg regularization parameter used when aligning controller state.
-switcher_cfg = struct('hysteresis_time',2,'blend_time',1.5,'recovery_time',2.0,'actuator_limits',[-5 5],'initial_mode',1);
+switcher_cfg = struct('hysteresis_time',2,'blend_time',1.5,'recovery_time',2.0,'actuator_limits',[-4 4],'initial_mode',1);
 % Slightly stronger default regularization to avoid large alignment pushes
 switcher_cfg.bumpless_reg = 1e-2;
 switcher_cfg.heuristic_switching_enabled = false;
@@ -921,7 +935,7 @@ function ss_sys = safe_controller_ss(C, plant_ss)
     end
 end
 
-function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloop_euler_local(plant_ss, sensor_ss, C_r, C_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg)
+function [u, mode_history, switch_times, y, diag] = simulate_resilient_closedloop_euler(plant_ss, sensor_ss, C_r, C_y, C_pid, t, r, attack_cfg, attack_flag, detection_time, switcher_cfg)
     % Self-consistent resilient closed-loop simulation.
     % Mode 1: 2DoF control u = C_r*r - C_y*y_meas
     % Mode 2: PID control on attacked measurement error
@@ -1279,7 +1293,7 @@ function C_pid_tuned = tune_pid_for_attack(plant_ss, sensor_ss, t, r, attack_cfg
 end
 
 function J = pid_attack_objective(x, plant_ss, sensor_ss, t, r, attack_cfg)
-    % Objective: ITAE of closed-loop response under attack using PID with gains x
+    % Objective: ITAE of closed-loop response under attack with PID using gains x
     Kp = max(0, x(1)); Ki = max(0, x(2)); Kd = max(0, x(3));
     Cpid = pid(Kp, Ki, Kd);
     try

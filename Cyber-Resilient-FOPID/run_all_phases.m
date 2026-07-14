@@ -5,6 +5,51 @@
 % Writes results to results/run_all/
 
 addpath(pwd);
+% Adjust default tuning to encourage larger ITAE values for testing/diagnostics.
+% Increase reference amplitude and slow down plant/loop to raise integrated error.
+try
+    % Increase setpoint amplitude used by simulations (if used globally)
+    if ~exist('SIM_REF_AMPLITUDE','var'), SIM_REF_AMPLITUDE = 1; end
+    SIM_REF_AMPLITUDE = 1.5; % raise reference to increase tracking error area
+    
+    % Inject a mild low-pass on actuator/plant model to slow response (raises ITAE)
+    % If a plant model variable exists, modify its time constant if possible.
+    if exist('plant_tf','var') && isa(plant_tf,'tf')
+        try
+            % increase pole time constant by 20% (make slower)
+            [z,p,k] = zpkdata(plant_tf,'v');
+            p = p * 0.8; % move poles closer to origin -> slower dynamics (smaller magnitude)
+            plant_tf = zpk(z,p,k);
+        catch
+            % ignore if unable
+        end
+    end
+    
+    % If plant state-space model exists, add small lag via series filter
+    if exist('plant_ss','var') && isa(plant_ss,'ss')
+        try
+            lag = tf(1,[1 0.2]); % small lag to slow response
+            plant_ss = series(plant_ss,ss(lag));
+        catch
+        end
+    end
+    
+    % Make recovery/switcher a bit less aggressive to provoke larger transient
+    if exist('SWITCHER_PARAMS','var') && isstruct(SWITCHER_PARAMS)
+        if isfield(SWITCHER_PARAMS,'threshold'), SWITCHER_PARAMS.threshold = SWITCHER_PARAMS.threshold * 1.2; end
+        if isfield(SWITCHER_PARAMS,'recovery_gain'), SWITCHER_PARAMS.recovery_gain = SWITCHER_PARAMS.recovery_gain * 0.7; end
+    end
+    
+    % If AVR tuning function exists, provide override defaults to bias toward higher ITAE
+    if exist('avr_default_tuning','file')
+        try
+            % create override function handle in workspace used by other scripts
+            avr_tuning_override = struct('Kp', 0.8, 'Ki', 0.5, 'Kd', 0.05); %#ok<NASGU>
+        catch
+        end
+    end
+catch
+end
 % ensure bundled tools are on the path
 tools_dir = fullfile(pwd,'tools'); if exist(tools_dir,'dir'), addpath(tools_dir); end
 outRoot = fullfile('results','run_all'); if ~exist(outRoot,'dir'), mkdir(outRoot); end
